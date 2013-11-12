@@ -34,6 +34,17 @@ library
   ghc-options: -Wall
   build-depends:
     base >= 4.4 && < 5
+  exposed-modules:
+    Language.Wart
+
+executable wartc
+  hs-source-dirs: tools
+  default-language: Haskell2010
+  ghc-options: -Wall
+  build-depends:
+    base >= 4.4 && < 5,
+    wart
+  main-is: wartc.hs
 
 test-suite hlint
   type: exitcode-stdio-1.0
