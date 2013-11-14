@@ -1,13 +1,39 @@
 language: haskell
 
 env:
+  - GHCVER=6.12.3
+  - GHCVER=7.0.1
+  - GHCVER=7.0.2
+  - GHCVER=7.0.3
+  - GHCVER=7.0.4
+  - GHCVER=7.2.1
+  - GHCVER=7.2.2
+  - GHCVER=7.4.1
+  - GHCVER=7.4.2
+  - GHCVER=7.6.1
+  - GHCVER=7.6.2
   - GHCVER=7.6.3
+  - GHCVER=head
+
+matrix:
+  allow_failures:
+    - env: GHCVER=6.12.3
+    - env: GHCVER=7.0.1
+    - env: GHCVER=7.0.2
+    - env: GHCVER=7.0.3
+    - env: GHCVER=7.0.4
+    - env: GHCVER=7.2.1
+    - env: GHCVER=7.2.2
+    - env: GHCVER=7.4.1
+    - env: GHCVER=7.4.2
+    - env: GHCVER=head
 
 before_install:
   # If $GHCVER is the one travis has, don't bother reinstalling it.
   # We can also have faster builds by installing some libraries with
   # `apt`. If it isn't, install the GHC we want from hvr's PPA along
   # with cabal-1.18.
+  - git submodule update --init --recursive
   - |
     if [ $GHCVER = `ghc --numeric-version` ]; then
       # Try installing some of the build-deps with apt-get for speed.
@@ -25,6 +51,9 @@ before_install:
   # - mkdir -p ~/.cabal && cp travis/config ~/.cabal/config && cabal update
 
 install:
+  - cd lens
+  - $CABAL install
+  - cd ..
   - $CABAL install --dependencies-only --enable-tests
   - $CABAL configure --enable-tests
 

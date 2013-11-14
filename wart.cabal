@@ -33,9 +33,35 @@ library
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:
-    base >= 4.4 && < 5
+    base >= 4.4 && < 5,
+    lens >= 4,
+    profunctors,
+    tagged,
+    transformers
   exposed-modules:
     Language.Wart
+    -- Language.Wart.CodeGen
+    Language.Wart.Kind
+    Language.Wart.Kind.Syntax
+    Language.Wart.Kind.Unify
+    -- Language.Wart.Parse
+    -- Language.Wart.Scheme
+    -- Language.Wart.Scheme.Check
+    -- Language.Wart.Scheme.Syntax
+    -- Language.Wart.Syntax
+    -- Language.Wart.Type
+    -- Language.Wart.Type.Syntax
+    -- Language.Wart.Type.Unify
+  other-modules:
+    Control.Lens.Union
+    Control.Monad.Extras
+    Control.Monad.ST.Class
+    Control.Monad.UnionFind
+    Control.Monad.UnionFind.ST
+    Control.Monad.UnionFind.Class
+    Data.STIntRef
+    -- Language.Wart.Lex
+    -- Language.Wart.Parser
 
 executable wartc
   hs-source-dirs: tools
