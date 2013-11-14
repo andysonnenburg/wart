@@ -8,16 +8,10 @@ module Language.Wart.Kind.Syntax
        , default'
        , star
        , row
-       , constr
-       , freeze
        ) where
 
-import Control.Applicative
 import Control.Lens
 import Control.Lens.Union
-import Control.Monad
-import Control.Monad.UnionFind
-import Data.Function (fix)
 import GHC.Generics (Generic)
 import Prelude hiding (read)
 
@@ -40,15 +34,3 @@ star = _B
 
 row :: Prism' (Kind f) ()
 row = _C
-
-constr :: Prism (Kind f) (Kind f') (f (Kind f), f (Kind f)) (f' (Kind f'), f' (Kind f'))
-constr = _D
-
-#ifndef HLINT
-freeze :: MonadUnionFind f m => f (Kind f) -> m (Identity (Kind Identity))
-freeze = fix $ \ rec -> read >=> fmap Identity . \ case
-  Default -> return Star
-  Star -> return Star
-  Row -> return Row
-  a :-> b -> (:->) <$> rec a <*> rec b
-#endif

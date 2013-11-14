@@ -13,7 +13,7 @@ import Language.Wart.Kind.Syntax
 import Prelude hiding (read)
 
 class Unify f m where
-  throwKindMismatch :: f (Kind f) -> f (Kind f) -> m a
+  throwKindMismatch :: Kind f -> Kind f -> m a
 
 #ifndef HLINT
 unify :: (MonadUnionFind f m, Unify f m) => f (Kind f) -> f (Kind f) -> m ()
@@ -26,5 +26,5 @@ unify f_x f_y = whenM (f_x /== f_y) $ (,) <$> read f_x <*> read f_y >>= \ case
     union f_x f_y
     unify f_a f_a'
     unify f_b f_b'
-  _ -> throwKindMismatch f_x f_y
+  (k_x, k_y) -> throwKindMismatch k_x k_y
 #endif
