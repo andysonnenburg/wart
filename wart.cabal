@@ -42,6 +42,7 @@ library
     Language.Wart
     -- Language.Wart.CodeGen
     Language.Wart.Kind
+    -- Language.Wart.Kind.Check
     Language.Wart.Kind.Syntax
     Language.Wart.Kind.Unify
     -- Language.Wart.Parse
@@ -49,9 +50,9 @@ library
     -- Language.Wart.Scheme.Check
     -- Language.Wart.Scheme.Syntax
     -- Language.Wart.Syntax
-    -- Language.Wart.Type
-    -- Language.Wart.Type.Syntax
-    -- Language.Wart.Type.Unify
+    Language.Wart.Type
+    Language.Wart.Type.Syntax
+    Language.Wart.Type.Unify
   other-modules:
     Control.Lens.Union
     Control.Monad.Extras

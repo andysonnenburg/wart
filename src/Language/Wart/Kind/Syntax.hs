@@ -3,11 +3,13 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Kind.Syntax
        ( Kind (..)
        , default'
        , star
        , row
+       , Kinded (..)
        ) where
 
 import Control.Lens
@@ -34,3 +36,6 @@ star = _B
 
 row :: Prism' (Kind f) ()
 row = _C
+
+class Kinded f a | a -> f where
+  kind :: Getter a (f (Kind f))
