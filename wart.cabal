@@ -35,23 +35,26 @@ library
   build-depends:
     base >= 4.4 && < 5,
     lens >= 4,
+    mtl,
     profunctors,
     tagged,
+    text,
     transformers
   exposed-modules:
     Language.Wart
+    Language.Wart.BindingFlag
     -- Language.Wart.CodeGen
     Language.Wart.Kind
     Language.Wart.Kind.Syntax
     Language.Wart.Kind.Unify
+    Language.Wart.Node
     -- Language.Wart.Parse
-    -- Language.Wart.Scheme
-    -- Language.Wart.Scheme.Check
-    -- Language.Wart.Scheme.Syntax
+    Language.Wart.Scheme
+    Language.Wart.Scheme.Syntax
     -- Language.Wart.Syntax
-    -- Language.Wart.Type
-    -- Language.Wart.Type.Syntax
-    -- Language.Wart.Type.Unify
+    Language.Wart.Type
+    Language.Wart.Type.Syntax
+    Language.Wart.Type.Unify
   other-modules:
     Control.Lens.Union
     Control.Monad.Extras

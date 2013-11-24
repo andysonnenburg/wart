@@ -110,8 +110,10 @@ class VariantI s t a b | s -> a, t -> b, s b -> t, t a -> s where
   _I = ix (Proxy :: Proxy N8)
 #endif
 
-instance VariantA (Either a c) (Either b c) a b
-instance VariantB (Either c a) (Either c b) a b
+instance VariantA (Maybe a) (Maybe a) () ()
+instance VariantB (Maybe a) (Maybe a') a a'
+instance VariantA (Either a b) (Either a' b) a a'
+instance VariantB (Either a b) (Either a b') b b'
 
 ix :: (Generic s, Generic t, GIxed n (Rep s) (Rep t) a b)
    => f n -> Prism s t a b
