@@ -10,15 +10,15 @@ module Language.Wart.Scheme.Syntax
        , Node (..), type'
        ) where
 
+import Control.Applicative
 import Control.Lens
 import Control.Lens.Union
 import GHC.Generics (Generic)
+import Language.Wart.Binding
 import Language.Wart.Node
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
 data Scheme a = G deriving Generic
--- instance Field1 (Scheme a) (Scheme a') () ()
-instance VariantA (Scheme a) (Scheme a') () ()
 
 data Binding f = Root | Binder (Binder f) deriving Generic
 instance VariantA (Binding f) (Binding f) () ()
@@ -32,15 +32,11 @@ _Binder = _B
 
 newtype Binder f = Scheme (Node f) deriving Generic
 instance Field1 (Binder f) (Binder f') (Node f) (Node f')
-instance VariantA (Binder f) (Binder f') (Node f) (Node f')
 
-class (Profunctor p, Functor f) => IsBinder p f s t a b | s -> a
-                                                        , t -> b
-                                                        , s b -> t
-                                                        , t a -> s where
-  _Scheme :: Optic p f s t a b
+class (Profunctor p, Functor f) => IsBinder p f s a | s -> a where
+  _Scheme :: Optic' p f s a
 
-instance Functor f => IsBinder (->) f (Binder a) (Binder b) (Node a) (Node b) where
+instance Functor f => IsBinder (->) f (Binder a) (Node a) where
   _Scheme = _1
 
 data Node f =

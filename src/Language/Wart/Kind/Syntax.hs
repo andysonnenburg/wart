@@ -1,20 +1,25 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.Kind.Syntax
        ( Kind (..), _Bot, _Star, _Row
        , Binding (..), bindingFlag, binder
-       , Binder (..), _Kind
-       , Node (..)
+       , Binder (..), _Scheme, _Type, _Kind
+       , Node (..), newNode
        ) where
 
 import Control.Applicative
 import Control.Lens
 import Control.Lens.Union
+import Control.Monad.Supply
 import GHC.Generics (Generic)
+import Language.Wart.Binding
 import Language.Wart.BindingFlag
 import Language.Wart.Node
+import Language.Wart.Scheme.Syntax (_Scheme)
 import qualified Language.Wart.Scheme.Syntax as Scheme
+import {-# SOURCE #-} Language.Wart.Type.Syntax (_Type)
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
 data Kind a
@@ -40,11 +45,8 @@ data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
 instance Field2 (Binding f) (Binding f') (Binder f) (Binder f')
 
-bindingFlag :: Lens' (Binding f) BindingFlag
-bindingFlag = _1
-
-binder :: Lens (Binding f) (Binding f') (Binder f) (Binder f')
-binder = _2
+instance (Profunctor p, Functor f) => IsBinding p f (Binding a) (Binder a) where
+  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ \ (a, b) -> Binding a b)
 
 data Binder f
   = Scheme (Scheme.Node f)
@@ -55,14 +57,14 @@ instance VariantB (Binder f) (Binder f) (f (Type.Node f)) (f (Type.Node f))
 instance VariantC (Binder f) (Binder f) (f (Node f)) (f (Node f))
 
 instance (Choice p, Applicative f) =>
-         Scheme.IsBinder p f (Binder a) (Binder a) (Scheme.Node a) (Scheme.Node a) where
+         Scheme.IsBinder p f (Binder a) (Scheme.Node a) where
   _Scheme = _A
 
 instance (Choice p, Applicative f) =>
-         Type.IsBinder p f (Binder a) (Binder a) (a (Type.Node a)) (a (Type.Node a)) where
+         Type.IsBinder p f (Binder a) (a (Type.Node a)) where
   _Type = _B
 
-_Kind :: Prism (Binder f) (Binder f) (f (Node f)) (f (Node f))
+_Kind :: Prism' (Binder f) (f (Node f))
 _Kind = _C
 
 data Node f =
@@ -77,3 +79,10 @@ instance Field3 (Node f) (Node f) (Kind (f (Node f))) (Kind (f (Node f)))
 instance IsNode (Node f) (f (Binding f)) (Kind (f (Node f))) where
   binding = _2
   value = _3
+
+
+newNode :: MonadSupply Int m
+        => f (Binding f)
+        -> Kind (f (Node f))
+        -> m (Node f)
+newNode b k = (\ x -> Node x b k) <$> supply

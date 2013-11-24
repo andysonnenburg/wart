@@ -1,82 +1,98 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Type.Syntax
-       ( Type (..)
-       , _Bot, _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend, _App
+       ( Type (..), _Bot, _Const, _App
+       , Const (..), _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend
        , Arity
        , Label
        , Binding (..), bindingFlag, binder
-       , Binder (..), IsBinder (..)
-       , Node (..), kind
+       , Binder (..), _Scheme, IsBinder (..), cloneBinder
+       , Node (..), kind, newNode
        ) where
 
-import Control.Applicative
+import Control.Applicative (Applicative, (<$>))
 import Control.Lens (Choice,
                      Field1 (..),
                      Field2 (..),
                      Field3 (..),
                      Field4 (..),
-                     Lens,
                      Lens',
-                     Optic,
+                     Optic',
                      Prism,
-                     Prism')
+                     Prism',
+                     Profunctor (..),
+                     (^.),
+                     re)
 import Control.Lens.Union
+import Control.Monad.Supply
+import Data.Functor.Identity (Identity)
+import Data.Tagged (Tagged)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+import Language.Wart.Binding
 import Language.Wart.BindingFlag
-import qualified Language.Wart.Kind.Syntax as Kind
+import {-# SOURCE #-} qualified Language.Wart.Kind.Syntax as Kind
 import Language.Wart.Node
-import qualified Language.Wart.Scheme.Syntax as Scheme
+import {-# SOURCE #-} Language.Wart.Scheme.Syntax (_Scheme)
+import {-# SOURCE #-} qualified Language.Wart.Scheme.Syntax as Scheme
 
 data Type a
   = Bot
-  | Number
+  | Const Const
+  | App a a deriving Generic
+instance VariantA (Type a) (Type a) () ()
+instance VariantB (Type a) (Type a) Const Const
+instance VariantC (Type a) (Type a') (a, a) (a', a')
+
+_Bot :: Prism' (Type a) ()
+_Bot = _A
+
+_Const :: Prism' (Type a) Const
+_Const = _B
+
+_App :: Prism (Type a) (Type a') (a, a) (a', a')
+_App = _C
+
+data Const
+  = Number
   | String
   | Fn {-# UNPACK #-} !Arity
   | Record
   | Variant
   | Empty
-  | Extend {-# UNPACK #-} !Label
-  | App a a deriving Generic
-instance VariantA (Type a) (Type a) () ()
-instance VariantB (Type a) (Type a) () ()
-instance VariantC (Type a) (Type a) () ()
-instance VariantD (Type a) (Type a) Arity Arity
-instance VariantE (Type a) (Type a) () ()
-instance VariantF (Type a) (Type a) () ()
-instance VariantG (Type a) (Type a) () ()
-instance VariantH (Type a) (Type a) Label Label
-instance VariantI (Type a) (Type a') (a, a) (a', a')
+  | Extend {-# UNPACK #-} !Label deriving (Eq, Generic)
+instance VariantA Const Const () ()
+instance VariantB Const Const () ()
+instance VariantC Const Const Arity Arity
+instance VariantD Const Const () ()
+instance VariantE Const Const () ()
+instance VariantF Const Const () ()
+instance VariantG Const Const Label Label
 
-_Bot :: Prism' (Type a) ()
-_Bot = _A
+_Number :: Prism' Const ()
+_Number = _A
 
-_Number :: Prism' (Type a) ()
-_Number = _B
+_String :: Prism' Const ()
+_String = _B
 
-_String :: Prism' (Type a) ()
-_String = _C
+_Fn :: Prism' Const Arity
+_Fn = _C
 
-_Fn :: Prism' (Type a) Arity
-_Fn = _D
+_Record :: Prism' Const ()
+_Record = _D
 
-_Record :: Prism' (Type a) ()
-_Record = _E
+_Variant :: Prism' Const ()
+_Variant = _E
 
-_Variant :: Prism' (Type a) ()
-_Variant = _F
+_Empty :: Prism' Const ()
+_Empty = _F
 
-_Empty :: Prism' (Type a) ()
-_Empty = _G
-
-_Extend :: Prism' (Type a) Label
-_Extend = _H
-
-_App :: Prism (Type a) (Type a') (a, a) (a', a')
-_App = _I
+_Extend :: Prism' Const Label
+_Extend = _G
 
 type Arity = Int
 type Label = Text
@@ -85,11 +101,8 @@ data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
 instance Field2 (Binding f) (Binding f') (Binder f) (Binder f')
 
-bindingFlag :: Lens' (Binding f) BindingFlag
-bindingFlag = _1
-
-binder :: Lens (Binding f) (Binding f') (Binder f) (Binder f')
-binder = _2
+instance (Profunctor p, Functor f) => IsBinding p f (Binding a) (Binder a) where
+  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ \ (a, b) -> Binding a b)
 
 data Binder f
   = Scheme !(Scheme.Node f)
@@ -98,18 +111,22 @@ instance VariantA (Binder f) (Binder f) (Scheme.Node f) (Scheme.Node f)
 instance VariantB (Binder f) (Binder f) (f (Node f)) (f (Node f))
 
 instance (Choice p, Applicative f) =>
-         Scheme.IsBinder p f (Binder a) (Binder a) (Scheme.Node a) (Scheme.Node a) where
+         Scheme.IsBinder p f (Binder a) (Scheme.Node a) where
   _Scheme = _A
 
-class (Choice p, Applicative f) => IsBinder p f s t a b | s -> a
-                                                        , t -> b
-                                                        , s b -> t
-                                                        , t a -> s where
-  _Type :: Optic p f s t a b
+class (Choice p, Functor f) => IsBinder p f s a | s -> a where
+  _Type :: Optic' p f s a
 
 instance (Choice p, Applicative f) =>
-         IsBinder p f (Binder a) (Binder a) (a (Node a)) (a (Node a)) where
+         IsBinder p f (Binder a) (a (Node a)) where
   _Type = _B
+
+cloneBinder :: (Scheme.IsBinder Tagged Identity s (Scheme.Node f),
+                IsBinder Tagged Identity s (f (Node f)))
+            => Binder f -> s
+cloneBinder = \ case
+  Scheme n_s -> n_s^.re _Scheme
+  Type v_t -> v_t^.re _Type
 
 data Node f =
   Node
@@ -128,3 +145,10 @@ instance IsNode (Node f) (f (Binding f)) (Type (f (Node f))) where
 
 kind :: Lens' (Node f) (f (Kind.Node f))
 kind = _4
+
+newNode :: MonadSupply Int m
+        => f (Binding f)
+        -> Type (f (Node f))
+        -> f (Kind.Node f)
+        -> m (Node f)
+newNode b t k = (\ x -> Node x b t k) <$> supply

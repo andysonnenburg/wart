@@ -42,6 +42,7 @@ library
     transformers
   exposed-modules:
     Language.Wart
+    Language.Wart.Binding
     Language.Wart.BindingFlag
     -- Language.Wart.CodeGen
     Language.Wart.Kind
@@ -59,10 +60,14 @@ library
     Control.Lens.Union
     Control.Monad.Extras
     Control.Monad.ST.Class
+    Control.Monad.Supply
+    Control.Monad.Supply.Class
+    Control.Monad.Trans.Supply
     Control.Monad.UnionFind
-    Control.Monad.UnionFind.ST
     Control.Monad.UnionFind.Class
+    Control.Monad.UnionFind.ST
     Data.STIntRef
+    Data.Stream
     -- Language.Wart.Lex
     -- Language.Wart.Parser
 
