@@ -32,13 +32,15 @@ _Root = _A
 _Binder :: Prism (Binding f) (Binding f') (Binder f) (Binder f')
 _Binder = _B
 
-instance (Choice p, Applicative f, Contravariant f) =>
-         IsBinding p f (Binding f) (Binder f) where
+#ifndef HLINT
+instance (Choice p, Applicative f) =>
+         IsBinding p f (Binding a) (Maybe (Binding a)) (Binder a) where
   tupled = dimap
            (\ case
-               Root -> Left Root
+               Root -> Left ()
                Binder v -> Right (Flexible, v))
-           (either pure (fmap $ Binder . snd)) . right'
+           (either (const $ pure Nothing) (fmap $ preview (_2.re _Binder))) . right'
+#endif
 
 newtype Binder f = Scheme (Node f) deriving Generic
 instance Field1 (Binder f) (Binder f') (Node f) (Node f')

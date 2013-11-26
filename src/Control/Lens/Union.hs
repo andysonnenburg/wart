@@ -27,7 +27,9 @@ import Control.Applicative
 import Control.Lens.Prism
 import Data.Profunctor
 import Data.Proxy (Proxy (Proxy))
-import GHC.Generics (Generic, Rep, (:+:) (..), (:*:) (..), K1 (..), M1 (..), U1 (..), from, to)
+import GHC.Generics (Generic, Rep,
+                     (:+:) (..), (:*:) (..), K1 (..), M1 (..), U1 (..),
+                     from, to)
 
 class VariantA s t a b | s -> a, t -> b, s b -> t, t a -> s where
   _A :: Prism s t a b

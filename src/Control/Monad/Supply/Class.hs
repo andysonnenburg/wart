@@ -16,8 +16,10 @@ import qualified Control.Monad.Trans.Supply as Trans
 class (Applicative m, Monad m) => MonadSupply s m | m -> s where
   supply :: m s
 
+#ifndef HLINT
   default supply :: (MonadTrans t, MonadSupply s m) => t m s
   supply = lift supply
+#endif
 
 instance (Applicative m, Monad m) => MonadSupply s (SupplyT s m) where
   supply = Trans.supply

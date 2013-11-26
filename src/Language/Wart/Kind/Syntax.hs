@@ -45,8 +45,9 @@ data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
 instance Field2 (Binding f) (Binding f') (Binder f) (Binder f')
 
-instance (Profunctor p, Functor f) => IsBinding p f (Binding a) (Binder a) where
-  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ \ (a, b) -> Binding a b)
+instance (Profunctor p, Functor f) =>
+         IsBinding p f (Binding a) (Binding a) (Binder a) where
+  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ uncurry Binding)
 
 data Binder f
   = Scheme (Scheme.Node f)

@@ -101,8 +101,9 @@ data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
 instance Field2 (Binding f) (Binding f') (Binder f) (Binder f')
 
-instance (Profunctor p, Functor f) => IsBinding p f (Binding a) (Binder a) where
-  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ \ (a, b) -> Binding a b)
+instance (Profunctor p, Functor f) =>
+         IsBinding p f (Binding a) (Binding a) (Binder a) where
+  tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ uncurry Binding)
 
 data Binder f
   = Scheme !(Scheme.Node f)
@@ -121,12 +122,14 @@ instance (Choice p, Applicative f) =>
          IsBinder p f (Binder a) (a (Node a)) where
   _Type = _B
 
+#ifndef HLINT
 cloneBinder :: (Scheme.IsBinder Tagged Identity s (Scheme.Node f),
                 IsBinder Tagged Identity s (f (Node f)))
             => Binder f -> s
 cloneBinder = \ case
   Scheme n_s -> n_s^.re _Scheme
   Type v_t -> v_t^.re _Type
+#endif
 
 data Node f =
   Node
