@@ -9,7 +9,7 @@ import Control.Lens
 import Control.Lens.Union
 import GHC.Generics (Generic)
 
-data BindingFlag = Flexible | Rigid deriving Generic
+data BindingFlag = Flexible | Rigid deriving (Show, Generic)
 instance VariantA BindingFlag BindingFlag () ()
 instance VariantB BindingFlag BindingFlag () ()
 

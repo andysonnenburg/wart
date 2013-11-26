@@ -8,7 +8,7 @@ module Language.Wart.Binding
 import Control.Lens
 import Language.Wart.BindingFlag
 
-class (Profunctor p, Functor f) => IsBinding p f s a | s -> a where
+class (Profunctor p, Functor f) => IsBinding p f s a | s -> a, a -> s where
   tupled :: Optic' p f s (BindingFlag, a)
 
 bindingFlag :: IsBinding (->) f s a => LensLike' f s BindingFlag

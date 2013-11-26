@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -15,6 +16,7 @@ import Control.Lens
 import Control.Lens.Union
 import GHC.Generics (Generic)
 import Language.Wart.Binding
+import Language.Wart.BindingFlag
 import Language.Wart.Node
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
@@ -29,6 +31,14 @@ _Root = _A
 
 _Binder :: Prism (Binding f) (Binding f') (Binder f) (Binder f')
 _Binder = _B
+
+instance (Choice p, Applicative f, Contravariant f) =>
+         IsBinding p f (Binding f) (Binder f) where
+  tupled = dimap
+           (\ case
+               Root -> Left Root
+               Binder v -> Right (Flexible, v))
+           (either pure (fmap $ Binder . snd)) . right'
 
 newtype Binder f = Scheme (Node f) deriving Generic
 instance Field1 (Binder f) (Binder f') (Node f) (Node f')
