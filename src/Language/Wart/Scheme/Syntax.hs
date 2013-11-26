@@ -40,7 +40,9 @@ instance (Choice p, Applicative f) =>
            (\ case
                Root -> Left ()
                Binder v -> Right (Flexible, v))
-           (either (const $ pure Nothing) (fmap $ preview (_2.re _Binder))) . right'
+           (either (const $ pure Nothing) (fmap $ \ case
+               (Flexible, v) -> Just $ Binder v
+               _ -> Nothing)) . right'
 #endif
 
 newtype Binder f = Scheme (Node f) deriving Generic
