@@ -11,7 +11,7 @@ module Language.Wart.Type.Unify
        ) where
 
 import Control.Applicative (Applicative (..), (<$>))
-import Control.Lens ((^.), (^!), (%~), _1, _2, re, to)
+import Control.Lens ((^.), (^!), (%~), _1, _2, perform, re, to)
 import Control.Lens.Switch
 import Control.Lens.Tuple.Extras
 import Control.Monad.Extras
@@ -105,13 +105,18 @@ unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m, MonadSupply Int m)
          => Label
          -> f (Type.Node f)
          -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))
-unifyRow l = fix (\ rec v_r0 -> read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
+unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
   $ caseM _Bot.:
-  (\ () -> withBinding (n_r0^.binding) $ do
-    v_r1 <- bot
-    v_l_t1 <- app (const $ Extend l) bot
-    join $ graft <$> app (pure v_l_t1) (pure v_r1) <*> pure v_r0
-    return (v_r0, v_l_t1, v_r1))
+  (\ () -> do
+    whenM (isTailOf v_r0 =<< ask) $
+      join $ throwTypeError <$>
+      v_r0^!contents.value <*>
+      (ask >>= perform (contents.value))
+    withBindingOf n_r0 $ do
+      v_r1 <- bot
+      v_l_t1 <- app (const $ Extend l) bot
+      join $ graft <$> app (pure v_l_t1) (pure v_r1) <*> pure v_r0
+      return (v_r0, v_l_t1, v_r1))
   $ caseM (_App.
            first (duplicated.second (contents.value._App._1.
                                      contents.value._Const._Extend))).:
@@ -122,11 +127,11 @@ unifyRow l = fix (\ rec v_r0 -> read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
       n_r1 <- read v_r1
       (v_r1', v_l_t2, v_r2) <- unifyRow l v_r1
       merge v_r1 v_r1'
-      v_r1'' <- withBinding (n_r0^.binding) $ app (pure v_l_t1) (pure v_r2)
-      v_r0' <- withBinding (n_r1^.binding) $ app (pure v_l_t2) (pure v_r1'')
+      v_r1'' <- withBindingOf n_r0 $ app (pure v_l_t1) (pure v_r2)
+      v_r0' <- withBindingOf n_r1 $ app (pure v_l_t2) (pure v_r1'')
       return (v_r0', v_l_t2, v_r1''))
   $ default'
-  (\ t0 -> throwRowError l t0))
+  (\ t0 -> throwRowError l t0)
 #endif
 
 withoutTailOf :: f (Type.Node f) -> ReaderT (f (Type.Node f)) m a -> m a
@@ -135,23 +140,24 @@ withoutTailOf = flip runReaderT
 isTailOf :: MonadUnionFind f m => f (Type.Node f) -> f (Type.Node f) -> m Bool
 isTailOf = undefined
 
-withBinding :: f (Type.Binding f) -> ReaderT (f (Type.Binding f)) m a -> m a
-withBinding = flip runReaderT
+withBindingOf :: MonadUnionFind f m
+              => Type.Node f
+              -> ReaderT (Type.Binding f) m a
+              -> m a
+withBindingOf n m = runReaderT m =<< n^!binding.contents
 
-bot :: (MonadReader (f (Type.Binding f)) m, MonadSupply Int m, MonadUnionFind f m)
+bot :: (MonadReader (Type.Binding f) m, MonadSupply Int m, MonadUnionFind f m)
     => m (f (Type.Node f))
 bot = do
-  b_t <- read =<< ask
-  v_b_t <- new b_t
+  v_b_t <- new =<< ask
   new =<< Type.newNode v_b_t Bot =<< kindBot
 
-const :: (MonadReader (f (Type.Binding f)) m,
-           MonadSupply Int m,
-           MonadUnionFind f m)
+const :: (MonadReader (Type.Binding f) m,
+          MonadSupply Int m,
+          MonadUnionFind f m)
        => Const -> m (f (Type.Node f))
 const c = do
-  b_t <- read =<< ask
-  v_b_t <- new b_t
+  v_b_t <- new =<< ask
   new =<< Type.newNode v_b_t (Const c) =<< lam star (lam row row)
 
 star :: m (f (Kind.Node f))
@@ -166,13 +172,12 @@ row = undefined
 kindBot :: m (f (Kind.Node f))
 kindBot = undefined
 
-app :: (MonadReader (f (Type.Binding f)) m, MonadSupply Int m, Kind.Unify f m)
+app :: (MonadReader (Type.Binding f) m, MonadSupply Int m, Kind.Unify f m)
     => m (f (Type.Node f))
     -> m (f (Type.Node f))
     -> m (f (Type.Node f))
 app m_a m_b = do
-  b_t <- read =<< ask
-  v_b_t <- new b_t
+  v_b_t <- new =<< ask
   v_a <- m_a
   v_b <- m_b
   v_k <- kindBot
