@@ -34,6 +34,7 @@ library
   ghc-options: -Wall
   build-depends:
     base >= 4.4 && < 5,
+    distributive,
     lens >= 4,
     mtl,
     profunctors,
@@ -57,6 +58,8 @@ library
     Language.Wart.Type.Syntax
     Language.Wart.Type.Unify
   other-modules:
+    Control.Lens.Switch
+    Control.Lens.Tuple.Extras
     Control.Lens.Union
     Control.Monad.Extras
     Control.Monad.ST.Class
