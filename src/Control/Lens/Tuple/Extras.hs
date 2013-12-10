@@ -16,6 +16,8 @@ import qualified Control.Arrow as Arrow
 import Control.Lens
 import Control.Lens.Internal.Action
 import Data.Maybe (fromMaybe)
+import Data.Monoid (mappend, mempty)
+import qualified Data.Monoid as Monoid
 
 duplicated :: Getter a (a, a)
 duplicated = to $ \ a -> (a, a)
@@ -25,9 +27,10 @@ first :: Functor f
       -> LensLike f (s, c) (t, c) (a, c) (b, c)
 {-# INLINE first #-}
 first l f (a, c) = getFirst (l (\ b ->
-  First $ f (b, c)&mapped._2 %~ Just) a)&mapped._2 %~ fromMaybe c
+  First $ f (b, c)&mapped._2 %~ Monoid.First . Just) a)
+  &mapped._2 %~ fromMaybe c . Monoid.getFirst
 
-newtype First c f a = First { getFirst :: f (a, Maybe c) }
+newtype First c f a = First { getFirst :: f (a, Monoid.First c) }
 
 instance Functor f => Functor (First c f) where
   {-# INLINE fmap #-}
@@ -35,11 +38,11 @@ instance Functor f => Functor (First c f) where
 
 instance Applicative f => Applicative (First c f) where
   {-# INLINE pure #-}
-  pure a = First $ pure (a, Nothing)
+  pure a = First $ pure (a, mempty)
   {-# INLINE (<*>) #-}
   f <*> a =
     First $
-    (\ (f', _) (a', _) -> (f' a', Nothing)) <$>
+    (\ (f', x) (a', y) -> (f' a', mappend x y)) <$>
     getFirst f <*>
     getFirst a
 
@@ -48,7 +51,9 @@ instance Contravariant f => Contravariant (First c f) where
   contramap f = First . contramap (Arrow.first f) . getFirst
 
 instance Effective m r f => Effective m r (First c f) where
+  {-# INLINE effective #-}
   effective = First . effective
+  {-# INLINE ineffective #-}
   ineffective = ineffective . getFirst
 
 second :: Functor f
@@ -56,9 +61,10 @@ second :: Functor f
        -> LensLike f (c, s) (c, t) (c, a) (c, b)
 {-# INLINE second #-}
 second l f (c, a) = getSecond (l (\ b ->
-  Second $ f (c, b)&mapped._1 %~ Just) a)&mapped._1 %~ fromMaybe c
+  Second $ f (c, b)&mapped._1 %~ Monoid.First . Just) a)
+  &mapped._1 %~ fromMaybe c . Monoid.getFirst
 
-newtype Second c f a = Second { getSecond :: f (Maybe c, a) }
+newtype Second c f a = Second { getSecond :: f (Monoid.First c, a) }
 
 instance Functor f => Functor (Second c f) where
   {-# INLINE fmap #-}
@@ -66,17 +72,20 @@ instance Functor f => Functor (Second c f) where
 
 instance Applicative f => Applicative (Second c f) where
   {-# INLINE pure #-}
-  pure a = Second $ pure (Nothing, a)
+  pure a = Second $ pure (mempty, a)
   {-# INLINE (<*>) #-}
   f <*> a =
     Second $
-    (\ (_, f') (_, a') -> (Nothing, f' a')) <$>
-    getSecond f <*> getSecond a
+    (\ (x, f') (y, a') -> (mappend x y, f' a')) <$>
+    getSecond f <*>
+    getSecond a
 
 instance Contravariant f => Contravariant (Second c f) where
   {-# INLINE contramap #-}
   contramap f = Second . contramap (Arrow.second f) . getSecond
 
 instance Effective m r f => Effective m r (Second c f) where
+  {-# INLINE effective #-}
   effective = Second . effective
+  {-# INLINE ineffective #-}
   ineffective = ineffective . getSecond
