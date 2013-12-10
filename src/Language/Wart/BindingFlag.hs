@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.BindingFlag
-       ( BindingFlag (..)
-       , flexible, rigid
+       ( BindingFlag (..), _Flexible, _Rigid
        ) where
 
 import Control.Lens
@@ -13,8 +12,8 @@ data BindingFlag = Flexible | Rigid deriving (Show, Generic)
 instance VariantA BindingFlag BindingFlag () ()
 instance VariantB BindingFlag BindingFlag () ()
 
-flexible :: Prism' BindingFlag ()
-flexible = _A
+_Flexible :: Prism' BindingFlag ()
+_Flexible = _A
 
-rigid :: Prism' BindingFlag ()
-rigid = _B
+_Rigid :: Prism' BindingFlag ()
+_Rigid = _B
