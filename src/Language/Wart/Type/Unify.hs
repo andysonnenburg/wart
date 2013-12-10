@@ -106,7 +106,7 @@ unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m, MonadSupply Int m)
          -> f (Type.Node f)
          -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))
 unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
-  $ caseM _Bot.:
+  $ case' _Bot.:
   (\ () -> do
     whenM (isTailOf v_r0 =<< ask) $
       join $ throwTypeError <$>
