@@ -26,7 +26,7 @@ import Language.Wart.Node
 import Language.Wart.Type.Syntax (Const (..),
                                   Label,
                                   Type (App, Bot, Const),
-                                  _App, _Bot, _Const, _Extend,
+                                  _App, _Bot, _Const, _Extend, bot,
                                   cloneBinder, kind)
 import qualified Language.Wart.Type.Syntax as Type
 import Prelude (Bool (..), Int, Maybe (..),
@@ -146,19 +146,8 @@ withBindingOf :: MonadUnionFind f m
               -> m a
 withBindingOf n m = runReaderT m =<< n^!binding.contents
 
-bot :: (MonadReader (Type.Binding f) m, MonadSupply Int m, MonadUnionFind f m)
-    => m (f (Type.Node f))
-bot = do
-  v_b_t <- new =<< ask
-  new =<< Type.newNode v_b_t Bot =<< kindBot
-
-const :: (MonadReader (Type.Binding f) m,
-          MonadSupply Int m,
-          MonadUnionFind f m)
-       => Const -> m (f (Type.Node f))
-const c = do
-  v_b_t <- new =<< ask
-  new =<< Type.newNode v_b_t (Const c) =<< lam star (lam row row)
+const :: Const -> m (f (Type.Node f))
+const = undefined
 
 star :: m (f (Kind.Node f))
 star = undefined
@@ -169,17 +158,7 @@ lam = undefined
 row :: m (f (Kind.Node f))
 row = undefined
 
-kindBot :: m (f (Kind.Node f))
-kindBot = undefined
-
-app :: (MonadReader (Type.Binding f) m, MonadSupply Int m, Kind.Unify f m)
-    => m (f (Type.Node f))
+app :: m (f (Type.Node f))
     -> m (f (Type.Node f))
     -> m (f (Type.Node f))
-app m_a m_b = do
-  v_b_t <- new =<< ask
-  v_a <- m_a
-  v_b <- m_b
-  v_k <- kindBot
-  join $ Kind.unify <$> v_a^!contents.kind <*> lam (v_b^!contents.kind) (pure v_k)
-  new =<< Type.newNode v_b_t (App v_a v_b) v_k
+app = undefined

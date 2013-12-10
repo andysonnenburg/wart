@@ -27,7 +27,7 @@ first :: Functor f
       -> LensLike f (s, c) (t, c) (a, c) (b, c)
 {-# INLINE first #-}
 first l f (a, c) = getFirst (l (\ b ->
-  First $ f (b, c)&mapped._2 %~ review (_Wrapped._Just)) a)
+  First $ f (b, c)&mapped._2 %~ (_Wrapped._Just#)) a)
   &mapped._2 %~ fromMaybe c . view _Wrapped
 
 newtype First c f a = First { getFirst :: f (a, Monoid.First c) }
@@ -61,7 +61,7 @@ second :: Functor f
        -> LensLike f (c, s) (c, t) (c, a) (c, b)
 {-# INLINE second #-}
 second l f (c, a) = getSecond (l (\ b ->
-  Second $ f (c, b)&mapped._1 %~ review (_Wrapped._Just)) a)
+  Second $ f (c, b)&mapped._1 %~ (_Wrapped._Just#)) a)
   &mapped._1 %~ fromMaybe c . view _Wrapped
 
 newtype Second c f a = Second { getSecond :: f (Monoid.First c, a) }

@@ -6,30 +6,35 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Type.Syntax
-       ( Type (..), _Bot, _Const, _App
+       ( Type (..), _Bot, _Const, _App, bot
        , Const (..), _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend
        , Arity
        , Label
        , Binding (..), bindingFlag, binder
        , Binder (..), _Scheme, IsBinder (..), cloneBinder
-       , Node (..), kind, newNode
+       , Node (..), kind
        ) where
 
-import Control.Applicative (Applicative, (<$>))
+import Control.Applicative (Applicative, (<$>), (<*>), pure)
 import Control.Lens (Choice,
                      Field1 (..),
                      Field2 (..),
                      Field3 (..),
                      Field4 (..),
                      Lens',
+                     Magnify (..),
                      Optic',
                      Prism,
                      Prism',
                      Profunctor (..),
                      (^.),
-                     re)
+                     (%~),
+                     re,
+                     to)
 import Control.Lens.Union
+import Control.Monad.Reader
 import Control.Monad.Supply
+import Control.Monad.UnionFind
 import Data.Functor.Identity (Identity)
 import Data.Tagged (Tagged)
 import Data.Text (Text)
@@ -57,6 +62,15 @@ _Const = _B
 
 _App :: Prism (Type a) (Type a') (a, a) (a', a')
 _App = _C
+
+bot :: (MonadSupply Int m, MonadUnionFind f m)
+    => ReaderT (Binding f) m (f (Node f))
+bot = do
+  new <=< join $
+    newNode <$>
+    (new =<< ask) <*>
+    pure Bot <*>
+    magnify (tupled.to (_2 %~ cloneBinder).re tupled) Kind.bot
 
 data Const
   = Number

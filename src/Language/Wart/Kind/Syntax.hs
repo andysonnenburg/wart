@@ -3,16 +3,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.Kind.Syntax
-       ( Kind (..), _Bot, _Star, _Row
+       ( Kind (..), _Bot, _Star, _Row, bot
        , Binding (..), bindingFlag, binder
        , Binder (..), _Scheme, _Type, _Kind
-       , Node (..), newNode
+       , Node (..)
        ) where
 
 import Control.Applicative
 import Control.Lens
 import Control.Lens.Union
+import Control.Monad.Reader
 import Control.Monad.Supply
+import Control.Monad.UnionFind
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
@@ -40,6 +42,14 @@ _Star = _B
 
 _Row :: Prism' (Kind a) ()
 _Row = _C
+
+bot :: (MonadSupply Int m, MonadUnionFind f m)
+    => ReaderT (Binding f) m (f (Node f))
+bot = do
+  new <=< join $
+    newNode <$>
+    (new =<< ask) <*>
+    pure Bot
 
 data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
