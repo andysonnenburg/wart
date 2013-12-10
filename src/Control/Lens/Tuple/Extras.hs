@@ -24,8 +24,8 @@ first :: Functor f
       => LensLike (First c f) s t a b
       -> LensLike f (s, c) (t, c) (a, c) (b, c)
 {-# INLINE first #-}
-first l f (a, c) = over _2 (fromMaybe c) <$> getFirst (l (\ b ->
-  First $ over _2 Just <$> f (b, c)) a)
+first l f (a, c) = getFirst (l (\ b ->
+  First $ f (b, c)&mapped._2 %~ Just) a)&mapped._2 %~ fromMaybe c
 
 newtype First c f a = First { getFirst :: f (a, Maybe c) }
 
@@ -55,8 +55,8 @@ second :: Functor f
        => LensLike (Second c f) s t a b
        -> LensLike f (c, s) (c, t) (c, a) (c, b)
 {-# INLINE second #-}
-second l f (c, a) = over _1 (fromMaybe c) <$> getSecond (l (\ b ->
-  Second $ over _1 Just <$> f (c, b)) a)
+second l f (c, a) = getSecond (l (\ b ->
+  Second $ f (c, b)&mapped._1 %~ Just) a)&mapped._1 %~ fromMaybe c
 
 newtype Second c f a = Second { getSecond :: f (Maybe c, a) }
 
@@ -73,7 +73,7 @@ instance Applicative f => Applicative (Second c f) where
     (\ (_, f') (_, a') -> (Nothing, f' a')) <$>
     getSecond f <*> getSecond a
 
-instance (c ~ d, Contravariant f) => Contravariant (Second c f) where
+instance Contravariant f => Contravariant (Second c f) where
   {-# INLINE contramap #-}
   contramap f = Second . contramap (Arrow.second f) . getSecond
 

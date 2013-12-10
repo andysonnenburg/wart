@@ -41,6 +41,7 @@ class MonadUnionFind f m => Unify f m where
 
 instance Unify f m => Unify f (ReaderT r m)
 
+#ifndef HLINT
 unify :: Unify f m => f (Kind.Node f) -> f (Kind.Node f) -> m ()
 unify v_x v_y = whenM (v_x /== v_y) $
   (,) <$> v_x^!contents.value <*> v_y^!contents.value >>= \ case
@@ -54,3 +55,4 @@ unify v_x v_y = whenM (v_x /== v_y) $
       unify v_a v_a'
       unify v_b v_b'
     (k_x, k_y) -> throwKindError k_x k_y
+#endif
