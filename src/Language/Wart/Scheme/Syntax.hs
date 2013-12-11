@@ -1,12 +1,13 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Scheme.Syntax
-       ( Scheme (..)
+       ( Scheme (..), scheme
        , Binding (..), _Root, _Binder
        , Binder (..), IsBinder (..)
        , Node (..), type'
@@ -15,6 +16,9 @@ module Language.Wart.Scheme.Syntax
 import Control.Applicative
 import Control.Lens
 import Control.Lens.Union
+import Control.Monad.Reader
+import Control.Monad.Supply
+import Control.Monad.UnionFind
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
@@ -68,6 +72,11 @@ instance Field4 (Node f) (Node f) (f (Type.Node f)) (f (Type.Node f))
 instance IsNode (Node f) (f (Binding f)) (Scheme (Node f)) where
   binding = _2
   value = _3
+
+scheme :: (MonadReader (Binding f) m, MonadSupply Int m, MonadUnionFind f m)
+       => Type.Node f
+       -> m (Node f)
+scheme n_t = Node <$> supply <*> (new =<< ask) <*> pure G <*> new n_t
 
 type' :: Lens' (Node f) (f (Type.Node f))
 type' = _4

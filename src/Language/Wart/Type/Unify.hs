@@ -78,8 +78,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
       merge v_x v_y'
       unify v_l_t v_l_t'
       unify v_r v_r')
-    $ default'
-    (const $ case (n_x^.value, n_y^.value) of
+    $ default' $ case (n_x^.value, n_y^.value) of
       (Bot, Bot) -> merge v_x v_y
       (_, Bot) -> graft v_x v_y
       (Bot, _) -> graft v_y v_x
@@ -88,7 +87,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
         merge v_x v_y
         unify t1 t1'
         unify t2 t2'
-      _ -> throwTypeError v_x v_y)
+      _ -> throwTypeError v_x v_y
 #endif
 
 unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m, MonadSupply Int m)
@@ -119,8 +118,7 @@ unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
       v_r3 <- withBindingOf n_r0 $ app (pure v_l_t1) (pure v_r2) row
       v_r0' <- withBindingOf n_r1 $ app (pure v_l_t2) (pure v_r3) row
       return (v_r0', v_l_t2, v_r3))
-  $ default'
-  (\ _ -> throwRowError l v_r0)
+  $ default' $ throwRowError l v_r0
 
 withoutTailOf :: f (Type.Node f) -> ReaderT (f (Type.Node f)) m a -> m a
 withoutTailOf = flip runReaderT
@@ -130,8 +128,7 @@ v_x `isTailOf` v_y =
   switch v_y
   $ caseM (contents.value._App._2).:
   (\ v_ys -> v_x === v_ys)
-  $ default'
-  (const $ return False)
+  $ default' $ return False
 
 withBindingOf :: MonadUnionFind f m
               => Type.Node f

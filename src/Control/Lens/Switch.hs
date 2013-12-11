@@ -37,9 +37,9 @@ caseM a = \ k f ->
   collectM (maybe (rep f s) (rep . untainted . k . tabulate . const $ rep f s)) $
   s^!?a
 
-default' :: (a -> b) -> a -> b
+default' :: b -> a -> b
 {-# INLINE default' #-}
-default' = id
+default' = const
 
 (.:) :: ASetter' s a -> a -> s -> s
 {-# INLINE (.:) #-}
