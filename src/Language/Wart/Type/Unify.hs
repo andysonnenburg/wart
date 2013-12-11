@@ -34,8 +34,8 @@ import Prelude (Bool (..), Int, Maybe (..),
 class (MonadSupply Int m, Kind.Unify f m) => Unify f m where
   merge :: f (Type.Node f) -> f (Type.Node f) -> m ()
   graft :: f (Type.Node f) -> f (Type.Node f) -> m ()
-  throwTypeError :: f (Type.Node f) -> f (Type.Node f) -> m b
-  throwRowError :: Label -> f (Type.Node f) -> m b
+  throwTypeError :: f (Type.Node f) -> f (Type.Node f) -> m a
+  throwRowError :: Label -> f (Type.Node f) -> m a
 
 #ifndef HLINT
   default merge :: (MonadTrans t, Unify f m)
@@ -51,13 +51,13 @@ class (MonadSupply Int m, Kind.Unify f m) => Unify f m where
 
 #ifndef HLINT
   default throwTypeError :: (MonadTrans t, Unify f m)
-                         => f (Type.Node f) -> f (Type.Node f) -> t m b
+                         => f (Type.Node f) -> f (Type.Node f) -> t m a
   throwTypeError v_x v_y = lift $ throwTypeError v_x v_y
 #endif
 
 #ifndef HLINT
   default throwRowError :: (MonadTrans t, Unify f m)
-                        => Label -> f (Type.Node f) -> t m b
+                        => Label -> f (Type.Node f) -> t m a
   throwRowError l v_r = lift $ throwRowError l v_r
 #endif
 
@@ -86,7 +86,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
         unify t2 t2'
       _ -> throwTypeError v_x v_y
 
-unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m, MonadSupply Int m)
+unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m)
          => Label
          -> f (Type.Node f)
          -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))

@@ -53,6 +53,7 @@ library
     -- Language.Wart.Parse
     Language.Wart.Scheme
     Language.Wart.Scheme.Syntax
+    Language.Wart.Scheme.Unify
     -- Language.Wart.Syntax
     Language.Wart.Type
     Language.Wart.Type.Syntax
