@@ -4,27 +4,28 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module Language.Wart.Type.Unify
        ( Unify (..)
        , unify
        ) where
 
 import Control.Applicative (Applicative (..), (<$>))
-import Control.Lens ((^.), (^!), _1, _2)
+import Control.Lens (Effective, LensLike', (^.), (^!), _1, _2)
 import Control.Lens.Switch
 import Control.Lens.Tuple.Extras
 import Control.Monad.Extras
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
-import Language.Wart.Kind ((-->), _Row, row, star)
+import Language.Wart.Kind (Kind, (-->), _Row, row, star)
 import qualified Language.Wart.Kind as Kind
 import Language.Wart.Node
-import Language.Wart.Type.Syntax (Const (..),
-                                  Label,
+import Language.Wart.Type.Syntax (Label,
                                   Type (App, Bot, Const),
                                   _App, _Bot, _Const, _Extend,
-                                  app, bot, const',
+                                  app, bot,
+                                  extend,
                                   kind)
 import qualified Language.Wart.Type.Syntax as Type
 import Prelude (Bool (..), Int, Maybe (..),
@@ -69,10 +70,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
   n_y <- read v_y
   Kind.unify (n_x^.kind) (n_y^.kind)
   switch n_x
-    $ caseM (duplicated.first (kind.contents.value._Row)._2.value.
-             _App.first (duplicated.second (contents.value._App._1.
-                                            contents.value._Const._Extend))).:
-    (\ ((v_l_t, l), v_r) -> do
+    $ caseM (kinded _Row.value.extension).: (\ ((v_l_t, l), v_r) -> do
       (v_y', v_l_t', v_r') <- withoutTailOf v_x $ unifyRow l v_y
       merge v_x v_y
       merge v_x v_y'
@@ -100,15 +98,10 @@ unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
     whenM (isTailOf v_r0 =<< ask) $ throwTypeError v_r0 =<< ask
     withBindingOf n_r0 $ do
       v_r1 <- bot row
-      v_l_t1 <- app
-                (const' (Extend l) (star --> row --> row))
-                (bot star)
-                (row --> row)
+      v_l_t1 <- app (extend l) (bot star) (row --> row)
       join $ graft <$> app (pure v_l_t1) (pure v_r1) row <*> pure v_r0
       return (v_r0, v_l_t1, v_r1))
-  $ caseM (_App.first (duplicated.second (contents.value._App._1.
-                                          contents.value._Const._Extend))).:
-  (\ ((v_l_t1, l'), v_r1) ->
+  $ caseM extension.: (\ ((v_l_t1, l'), v_r1) ->
     if l' == l
     then return (v_r0, v_l_t1, v_r1)
     else do
@@ -135,3 +128,15 @@ withBindingOf :: MonadUnionFind f m
               -> ReaderT (Type.Binding f) m a
               -> m a
 withBindingOf n m = runReaderT m =<< n^!binding.contents
+
+kinded :: (Effective m r f, MonadUnionFind var m)
+       => LensLike' (First (Type.Node var) f) (Kind (var (Kind.Node var))) a
+       -> LensLike' f (Type.Node var) (Type.Node var)
+kinded l = duplicated.first (kind.contents.value.l)._2
+
+extension :: (Applicative f, Effective m r f, MonadUnionFind var m)
+          => LensLike' f
+             (Type (var (Type.Node var)))
+             ((var (Type.Node var), Label), var (Type.Node var))
+extension = _App.first (duplicated.second (contents.value._App._1.
+                                           contents.value._Const._Extend))

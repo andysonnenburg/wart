@@ -9,8 +9,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Type.Syntax
-       ( Type (..), _Bot, _Const, _App, bot, const', app
-       , Const (..), _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend
+       ( Type (..)
+       , _Bot, _Const, _App, bot, const', app
+       , Const (..)
+       , _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend
+       , number, string, fn, record, variant, empty, extend
        , Arity
        , Label
        , Binding (..), bindingFlag, binder
@@ -46,6 +49,7 @@ import Data.Traversable (Traversable, sequenceA)
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
+import {-# SOURCE #-} Language.Wart.Kind.Syntax ((-->), row, star)
 import {-# SOURCE #-} qualified Language.Wart.Kind.Syntax as Kind
 import Language.Wart.Node
 import {-# SOURCE #-} Language.Wart.Scheme.Syntax (_Scheme)
@@ -133,6 +137,36 @@ _Empty = _F
 
 _Extend :: Prism' Const Label
 _Extend = _G
+
+number :: (MonadSupply Int m, MonadUnionFind f m)
+       => ReaderT (Binding f) m (f (Node f))
+number = const' Number star
+
+string :: (MonadSupply Int m, MonadUnionFind f m)
+       => ReaderT (Binding f) m (f (Node f))
+string = const' String star
+
+fn :: (MonadSupply Int m, MonadUnionFind f m)
+   => Arity
+   -> ReaderT (Binding f) m (f (Node f))
+fn n = const' (Fn n) (foldr (-->) star (replicate n star))
+
+record :: (MonadSupply Int m, MonadUnionFind f m)
+       => ReaderT (Binding f) m (f (Node f))
+record = const' Record (row --> star)
+
+variant :: (MonadSupply Int m, MonadUnionFind f m)
+        => ReaderT (Binding f) m (f (Node f))
+variant = const' Variant (row --> star)
+
+empty :: (MonadSupply Int m, MonadUnionFind f m)
+      => ReaderT (Binding f) m (f (Node f))
+empty = const' Empty row
+
+extend :: (MonadSupply Int m, MonadUnionFind f m)
+       => Label
+       -> ReaderT (Binding f) m (f (Node f))
+extend l = const' (Extend l) (star --> row --> row)
 
 type Arity = Int
 type Label = Text
