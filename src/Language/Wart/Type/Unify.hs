@@ -63,7 +63,6 @@ class (MonadSupply Int m, Kind.Unify f m) => Unify f m where
 
 instance Unify f m => Unify f (ReaderT r m)
 
-#ifndef HLINT
 unify :: Unify f m => f (Type.Node f) -> f (Type.Node f) -> m ()
 unify v_x v_y = whenM (v_x /== v_y) $ do
   n_x <- read v_x
@@ -86,15 +85,13 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
         unify t1 t1'
         unify t2 t2'
       _ -> throwTypeError v_x v_y
-#endif
 
 unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m, MonadSupply Int m)
          => Label
          -> f (Type.Node f)
          -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))
 unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
-  $ case' _Bot.:
-  (\ () -> do
+  $ case' _Bot.: (\ () -> do
     whenM (isTailOf v_r0 =<< ask) $ throwTypeError v_r0 =<< ask
     withBindingOf n_r0 $ do
       v_r1 <- bot row
