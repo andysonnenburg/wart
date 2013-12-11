@@ -12,6 +12,8 @@ import Data.Profunctor
 import Language.Wart.Binding
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
+infixr 9 -->
+
 bot :: (MonadSupply Int m, MonadUnionFind f m)
     => ReaderT (Binding f) m (f (Node f))
 

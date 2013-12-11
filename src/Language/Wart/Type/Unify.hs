@@ -71,8 +71,8 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
   switch n_x
     $ caseM (kinded _Row.value.extension).: (\ ((v_l_t, l), v_r) -> do
       (v_y', v_l_t', v_r') <- withoutTailOf v_x $ unifyRow l v_y
+      merge v_y v_y'
       merge v_x v_y
-      merge v_x v_y'
       unify v_l_t v_l_t'
       unify v_r v_r')
     $ default' $ case (n_x^.value, n_y^.value) of
