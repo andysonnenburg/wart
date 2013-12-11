@@ -104,7 +104,7 @@ unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
       v_l_t1 <- app
                 (const' (Extend l) (star --> row --> row))
                 (bot star)
-                (row --> row) 
+                (row --> row)
       join $ graft <$> app (pure v_l_t1) (pure v_r1) row <*> pure v_r0
       return (v_r0, v_l_t1, v_r1))
   $ caseM (_App.first (duplicated.second (contents.value._App._1.
