@@ -8,4 +8,8 @@ import Control.Lens
 class (Profunctor p, Functor f) => IsBinder p f s a | s -> a where
   _Scheme :: Optic' p f s a
 
+newtype Binder (f :: * -> *)
+
 data Node (f :: * -> *)
+
+instance Functor f => IsBinder (->) f (Binder a) (Node a)
