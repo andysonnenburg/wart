@@ -113,7 +113,6 @@ instance IsNode (Node f) (f (Binding f)) (Kind (f (Node f))) where
   binding = _2
   value = _3
 
-
 newNode :: MonadSupply Int m
         => f (Binding f)
         -> Kind (f (Node f))

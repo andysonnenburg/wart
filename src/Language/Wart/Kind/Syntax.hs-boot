@@ -10,6 +10,7 @@ import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Profunctor
 import Language.Wart.Binding
+import {-# SOURCE #-} qualified Language.Wart.Scheme.Syntax as Scheme
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
 infixr 9 -->
@@ -39,3 +40,6 @@ instance (Profunctor p, Functor f) =>
 
 instance (Choice p, Applicative f) =>
          Type.IsBinder p f (Binder a) (a (Type.Node a))
+
+instance (Choice p, Applicative f) =>
+         Scheme.IsBinder p f (Binder a) (Scheme.Node a)
