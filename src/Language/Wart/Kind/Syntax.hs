@@ -1,9 +1,12 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.Kind.Syntax
-       ( Kind (..), _Bot, _Star, _Row, bot
+       ( Kind (..), _Bot, _Star, _Row, bot, star, row, (-->)
        , Binding (..), bindingFlag, binder
        , Binder (..), _Scheme, _Type, _Kind
        , Node (..)
@@ -15,6 +18,8 @@ import Control.Lens.Union
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
+import Data.Foldable (Foldable)
+import Data.Traversable (Traversable, sequenceA)
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
@@ -24,11 +29,13 @@ import qualified Language.Wart.Scheme.Syntax as Scheme
 import {-# SOURCE #-} Language.Wart.Type.Syntax (_Type)
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
+infixr 9 :->, -->
+
 data Kind a
   = Bot
   | Star
   | Row
-  | a :-> a deriving Generic
+  | a :-> a deriving (Functor, Foldable, Traversable, Generic)
 instance VariantA (Kind a) (Kind a) () ()
 instance VariantB (Kind a) (Kind a) () ()
 instance VariantC (Kind a) (Kind a) () ()
@@ -45,11 +52,26 @@ _Row = _C
 
 bot :: (MonadSupply Int m, MonadUnionFind f m)
     => ReaderT (Binding f) m (f (Node f))
-bot = do
-  new <=< join $
-    newNode <$>
-    (new =<< ask) <*>
-    pure Bot
+bot = kind Bot
+
+star :: (MonadSupply Int m, MonadUnionFind f m)
+     => ReaderT (Binding f) m (f (Node f))
+star = kind Star
+
+row :: (MonadSupply Int m, MonadUnionFind f m)
+     => ReaderT (Binding f) m (f (Node f))
+row = kind Row
+
+(-->) :: (MonadSupply Int m, MonadUnionFind f m)
+      => ReaderT (Binding f) m (f (Node f))
+      -> ReaderT (Binding f) m (f (Node f))
+      -> ReaderT (Binding f) m (f (Node f))
+a --> b = kind $ a :-> b
+
+kind :: (MonadSupply Int m, MonadUnionFind f m)
+     => Kind (ReaderT (Binding f) m (f (Node f)))
+     -> ReaderT (Binding f) m (f (Node f))
+kind c = new <=< join $ newNode <$> (new =<< ask) <*> sequenceA c
 
 data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag

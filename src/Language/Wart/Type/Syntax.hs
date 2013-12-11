@@ -1,12 +1,15 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Type.Syntax
-       ( Type (..), _Bot, _Const, _App, bot
+       ( Type (..), _Bot, _Const, _App, bot, const', app
        , Const (..), _Number, _String, _Fn, _Record, _Variant, _Empty, _Extend
        , Arity
        , Label
@@ -15,7 +18,7 @@ module Language.Wart.Type.Syntax
        , Node (..), kind
        ) where
 
-import Control.Applicative (Applicative, (<$>), (<*>), pure)
+import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Lens (Choice,
                      Field1 (..),
                      Field2 (..),
@@ -35,9 +38,11 @@ import Control.Lens.Union
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
+import Data.Foldable (Foldable)
 import Data.Functor.Identity (Identity)
 import Data.Tagged (Tagged)
 import Data.Text (Text)
+import Data.Traversable (Traversable, sequenceA)
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
@@ -49,7 +54,7 @@ import {-# SOURCE #-} qualified Language.Wart.Scheme.Syntax as Scheme
 data Type a
   = Bot
   | Const Const
-  | App a a deriving Generic
+  | App a a deriving (Functor, Foldable, Traversable, Generic)
 instance VariantA (Type a) (Type a) () ()
 instance VariantB (Type a) (Type a) Const Const
 instance VariantC (Type a) (Type a') (a, a) (a', a')
@@ -64,13 +69,33 @@ _App :: Prism (Type a) (Type a') (a, a) (a', a')
 _App = _C
 
 bot :: (MonadSupply Int m, MonadUnionFind f m)
+    => ReaderT (Kind.Binding f) m (f (Kind.Node f))
+    -> ReaderT (Binding f) m (f (Node f))
+bot = type' Bot
+
+const' :: (MonadSupply Int m, MonadUnionFind f m)
+       => Const
+       -> ReaderT (Kind.Binding f) m (f (Kind.Node f))
+       -> ReaderT (Binding f) m (f (Node f))
+const' = type' . Const
+
+app :: (MonadSupply Int m, MonadUnionFind f m)
     => ReaderT (Binding f) m (f (Node f))
-bot = do
+    -> ReaderT (Binding f) m (f (Node f))
+    -> ReaderT (Kind.Binding f) m (f (Kind.Node f))
+    -> ReaderT (Binding f) m (f (Node f))
+app m_f m_a = type' $ App m_f m_a
+
+type' :: (MonadSupply Int m, MonadUnionFind f m)
+      => Type (ReaderT (Binding f) m (f (Node f)))
+      -> ReaderT (Kind.Binding f) m (f (Kind.Node f))
+      -> ReaderT (Binding f) m (f (Node f))
+type' c m_k =
   new <=< join $
-    newNode <$>
-    (new =<< ask) <*>
-    pure Bot <*>
-    magnify (tupled.to (_2 %~ cloneBinder).re tupled) Kind.bot
+  newNode <$>
+  (new =<< ask) <*>
+  sequenceA c <*>
+  magnify (tupled.to (_2 %~ cloneBinder).re tupled) m_k
 
 data Const
   = Number

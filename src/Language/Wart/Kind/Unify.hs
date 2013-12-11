@@ -19,7 +19,7 @@ import Language.Wart.Node
 class MonadUnionFind f m => Unify f m where
   merge :: f (Kind.Node f) -> f (Kind.Node f) -> m ()
   graft :: f (Kind.Node f) -> f (Kind.Node f) -> m ()
-  throwKindError :: Kind (f (Kind.Node f)) -> Kind (f (Kind.Node f)) -> m b
+  throwKindError :: f (Kind.Node f) -> f (Kind.Node f) -> m b
 
 #ifndef HLINT
   default merge :: (MonadTrans t, Unify f m)
@@ -35,8 +35,8 @@ class MonadUnionFind f m => Unify f m where
 
 #ifndef HLINT
   default throwKindError :: (MonadTrans t, Unify f m)
-                         => Kind (f (Kind.Node f)) -> Kind (f (Kind.Node f)) -> t m b
-  throwKindError k_x k_y = lift $ throwKindError k_x k_y
+                         => f (Kind.Node f) -> f (Kind.Node f) -> t m b
+  throwKindError v_x v_y = lift $ throwKindError v_x v_y
 #endif
 
 instance Unify f m => Unify f (ReaderT r m)
@@ -54,5 +54,5 @@ unify v_x v_y = whenM (v_x /== v_y) $
       merge v_x v_y
       unify v_a v_a'
       unify v_b v_b'
-    (k_x, k_y) -> throwKindError k_x k_y
+    _ -> throwKindError v_x v_y
 #endif
