@@ -4,11 +4,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.Kind.Syntax where
 
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Profunctor
 import Language.Wart.Binding
+import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
 bot :: (MonadSupply Int m, MonadUnionFind f m)
     => ReaderT (Binding f) m (f (Node f))
@@ -32,3 +34,6 @@ data Node (f :: * -> *)
 
 instance (Profunctor p, Functor f) =>
          IsBinding p f (Binding a) (Binding a) (Binder a)
+
+instance (Choice p, Applicative f) =>
+         Type.IsBinder p f (Binder a) (a (Type.Node a))
