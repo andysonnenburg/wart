@@ -70,7 +70,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
   Kind.unify (n_x^.kind) (n_y^.kind)
   switch n_x
     $ caseM (kinded _Row.value.extension).: (\ ((v_l_t, l), v_r) -> do
-      (v_y', v_l_t', v_r') <- withoutTailOf v_x $ unifyRow l v_y
+      (v_y', v_l_t', v_r') <- withoutTailOf v_x $ getLabel l v_y
       merge v_y v_y'
       merge v_x v_y
       unify v_l_t v_l_t'
@@ -86,11 +86,11 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
         unify t2 t2'
       _ -> throwTypeError v_x v_y
 
-unifyRow :: (Unify f m, MonadReader (f (Type.Node f)) m)
+getLabel :: (Unify f m, MonadReader (f (Type.Node f)) m)
          => Label
          -> f (Type.Node f)
          -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))
-unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
+getLabel l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
   $ case' _Bot.: (\ () -> do
     whenM (isTailOf v_r0 =<< ask) $ throwTypeError v_r0 =<< ask
     withBindingOf n_r0 $ do
@@ -103,7 +103,7 @@ unifyRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
     then return (v_r0, v_l_t1, v_r1)
     else do
       n_r1 <- read v_r1
-      (v_r1', v_l_t2, v_r2) <- unifyRow l v_r1
+      (v_r1', v_l_t2, v_r2) <- getLabel l v_r1
       merge v_r1 v_r1'
       v_r3 <- withBindingOf n_r0 $ app (pure v_l_t1) (pure v_r2) row
       v_r0' <- withBindingOf n_r1 $ app (pure v_l_t2) (pure v_r3) row

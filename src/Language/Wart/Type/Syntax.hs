@@ -217,6 +217,7 @@ instance Field3 (Node f) (Node f) (Type (f (Node f))) (Type (f (Node f)))
 instance Field4 (Node f) (Node f) (f (Kind.Node f)) (f (Kind.Node f))
 
 instance IsNode (Node f) (f (Binding f)) (Type (f (Node f))) where
+  int = _1
   binding = _2
   value = _3
 

@@ -13,6 +13,8 @@ import Control.Applicative
 import Control.Lens
 import Control.Monad.Reader
 import Control.Monad.ST.Safe
+import qualified Control.Monad.State.Lazy as Lazy
+import qualified Control.Monad.State.Strict as Strict
 import qualified Control.Monad.UnionFind.ST as ST
 import Prelude hiding (read)
 
@@ -77,3 +79,5 @@ instance MonadUnionFind (ST.Var s) (ST s) where
   (/==) = (ST./==)
 
 instance MonadUnionFind f m => MonadUnionFind f (ReaderT r m)
+instance MonadUnionFind f m => MonadUnionFind f (Lazy.StateT s m)
+instance MonadUnionFind f m => MonadUnionFind f (Strict.StateT s m)

@@ -70,6 +70,7 @@ instance Field3 (Node f) (Node f) (Scheme (Node f)) (Scheme (Node f))
 instance Field4 (Node f) (Node f) (f (Type.Node f)) (f (Type.Node f))
 
 instance IsNode (Node f) (f (Binding f)) (Scheme (Node f)) where
+  int = _1
   binding = _2
   value = _3
 
