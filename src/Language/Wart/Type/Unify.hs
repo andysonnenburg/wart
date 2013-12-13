@@ -18,7 +18,7 @@ import Control.Monad.Extras
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
-import Language.Wart.Kind (Kind, (-->), _Row, row, star)
+import Language.Wart.Kind (Kind, (~>), _Row, row, star)
 import qualified Language.Wart.Kind as Kind
 import Language.Wart.Node
 import Language.Wart.Type.Syntax (Label,
@@ -70,8 +70,7 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
   Kind.unify (n_x^.kind) (n_y^.kind)
   switch n_x
     $ caseM (kinded _Row.value.extension).: (\ ((v_l_t, l), v_r) -> do
-      (v_y', v_l_t', v_r') <- withoutTailOf v_x $ getLabel l v_y
-      merge v_y v_y'
+      (v_l_t', v_r') <- withoutTailOf v_x $ getRow l v_y
       merge v_x v_y
       unify v_l_t v_l_t'
       unify v_r v_r')
@@ -86,28 +85,28 @@ unify v_x v_y = whenM (v_x /== v_y) $ do
         unify t2 t2'
       _ -> throwTypeError v_x v_y
 
-getLabel :: (Unify f m, MonadReader (f (Type.Node f)) m)
-         => Label
-         -> f (Type.Node f)
-         -> m (f (Type.Node f), f (Type.Node f), f (Type.Node f))
-getLabel l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
+getRow :: (Unify f m, MonadReader (f (Type.Node f)) m)
+       => Label
+       -> f (Type.Node f)
+       -> m (f (Type.Node f), f (Type.Node f))
+getRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
   $ case' _Bot.: (\ () -> do
     whenM (isTailOf v_r0 =<< ask) $ throwTypeError v_r0 =<< ask
     withBindingOf n_r0 $ do
       v_r1 <- bot row
-      v_l_t1 <- app (extend l) (bot star) (row --> row)
+      v_l_t1 <- app (extend l) (bot star) (row ~> row)
       join $ graft <$> app (pure v_l_t1) (pure v_r1) row <*> pure v_r0
-      return (v_r0, v_l_t1, v_r1))
+      return (v_l_t1, v_r1))
   $ caseM extension.: (\ ((v_l_t1, l'), v_r1) ->
     if l' == l
-    then return (v_r0, v_l_t1, v_r1)
+    then return (v_l_t1, v_r1)
     else do
       n_r1 <- read v_r1
-      (v_r1', v_l_t2, v_r2) <- getLabel l v_r1
-      merge v_r1 v_r1'
+      (v_l_t2, v_r2) <- getRow l v_r1
       v_r3 <- withBindingOf n_r0 $ app (pure v_l_t1) (pure v_r2) row
       v_r0' <- withBindingOf n_r1 $ app (pure v_l_t2) (pure v_r3) row
-      return (v_r0', v_l_t2, v_r3))
+      merge v_r0 v_r0'
+      return (v_l_t2, v_r3))
   $ default' $ throwRowError l v_r0
 
 withoutTailOf :: f (Type.Node f) -> ReaderT (f (Type.Node f)) m a -> m a

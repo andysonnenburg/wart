@@ -39,6 +39,7 @@ library
     lens >= 4,
     mtl,
     profunctors,
+    semigroups,
     tagged,
     text,
     transformers
@@ -60,6 +61,7 @@ library
     Language.Wart.Type.Syntax
     Language.Wart.Type.Unify
   other-modules:
+    Control.Lens.Action.Extras
     Control.Lens.Switch
     Control.Lens.Tuple.Extras
     Control.Lens.Union

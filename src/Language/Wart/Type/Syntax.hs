@@ -49,7 +49,7 @@ import Data.Traversable (Traversable, sequenceA)
 import GHC.Generics (Generic)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
-import {-# SOURCE #-} Language.Wart.Kind.Syntax ((-->), row, star)
+import {-# SOURCE #-} Language.Wart.Kind.Syntax ((~>), row, star)
 import {-# SOURCE #-} qualified Language.Wart.Kind.Syntax as Kind
 import Language.Wart.Node
 import {-# SOURCE #-} Language.Wart.Scheme.Syntax (_Scheme)
@@ -149,15 +149,15 @@ string = const' String star
 fn :: (MonadSupply Int m, MonadUnionFind f m)
    => Arity
    -> ReaderT (Binding f) m (f (Node f))
-fn n = const' (Fn n) (foldr (-->) star (replicate n star))
+fn n = const' (Fn n) (foldr (~>) star (replicate n star))
 
 record :: (MonadSupply Int m, MonadUnionFind f m)
        => ReaderT (Binding f) m (f (Node f))
-record = const' Record (row --> star)
+record = const' Record (row ~> star)
 
 variant :: (MonadSupply Int m, MonadUnionFind f m)
         => ReaderT (Binding f) m (f (Node f))
-variant = const' Variant (row --> star)
+variant = const' Variant (row ~> star)
 
 empty :: (MonadSupply Int m, MonadUnionFind f m)
       => ReaderT (Binding f) m (f (Node f))
@@ -166,7 +166,7 @@ empty = const' Empty row
 extend :: (MonadSupply Int m, MonadUnionFind f m)
        => Label
        -> ReaderT (Binding f) m (f (Node f))
-extend l = const' (Extend l) (star --> row --> row)
+extend l = const' (Extend l) (star ~> row ~> row)
 
 type Arity = Int
 type Label = Text

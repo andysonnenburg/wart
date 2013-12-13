@@ -12,18 +12,21 @@ module Language.Wart.Scheme.Unify
        ) where
 
 import Control.Lens
+import Control.Lens.Action.Extras
+import Control.Lens.Extras
 import Control.Lens.Tuple.Extras
 import Control.Monad.State.Strict
 import Control.Monad.Supply
-import Control.Monad.Trans.Class
 import Control.Monad.UnionFind
 import Data.IntMap.Strict (IntMap)
+import Data.Semigroup (Semigroup ((<>)))
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
 import qualified Language.Wart.Kind as Kind
 import Language.Wart.Node
+import Language.Wart.Scheme.Syntax (type')
 import qualified Language.Wart.Scheme.Syntax as Scheme
-import Language.Wart.Type (Label)
+import Language.Wart.Type (Label, kind)
 import qualified Language.Wart.Type as Type
 
 class (MonadSupply Int m, MonadUnionFind f m) => Unify f m where
@@ -63,15 +66,22 @@ unify :: Unify f m
       -> m ()
 unify _ _ _ = return ()
 
-type Unifier (f :: * -> *) = StateT (Colors, Morhpisms)
+type Unifier (f :: * -> *) = StateT (Colors, Morphisms)
 
 data Permission = M | I | G | O | R
 
-class Functor f => HasPermission f s where
-  permission :: LensLike' f s Permission
-
-instance (Contravariant f, Functor f) => HasPermission f (Scheme.Node var) where
-  permission = to $ const G
+#ifndef HLINT
+permission :: (Effective (Unifier f m) r f,
+               HasColor (First s f) s,
+               HasMorphism (Second Color f) s)
+           => LensLike' f s Permission
+permission = duplicated.first color.second morphism.to (\ case
+  (_, Monomorphic) -> M
+  (_, Inert) -> I
+  (Green, _) -> G
+  (Orange, _) -> O
+  (Red, _) -> R)
+#endif
 
 type Colors = IntMap Color
 
@@ -81,10 +91,10 @@ colors :: (Functor f, Field1 s t Colors Colors)
        -> f t
 colors = _1
 
-type Morhpisms = IntMap Morphism
+type Morphisms = IntMap Morphism
 
-morphisms :: (Functor f, Field2 s t Morhpisms Morhpisms)
-          => (Morhpisms -> f Morhpisms)
+morphisms :: (Functor f, Field2 s t Morphisms Morphisms)
+          => (Morphisms -> f Morphisms)
           -> s
           -> f t
 morphisms = _2
@@ -107,8 +117,8 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
         Kind.Kind v_k -> v_k^!contents.color).color
 #endif
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
-         HasColor f (Type.Node var) where
+instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+      => HasColor f (Type.Node var) where
 #ifndef HLINT
   color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
     Just c -> return c
@@ -132,5 +142,87 @@ instance (Contravariant f, Functor f) => HasColor f (BindingFlag, Color) where
 
 data Morphism = Polymorphic | Monomorphic | Inert
 
+instance Semigroup Morphism where
+  Polymorphic <> _ = Polymorphic
+  _ <> Polymorphic = Polymorphic
+  Inert <> _ = Inert
+  _ <> Inert = Inert
+  Monomorphic <> Monomorphic = Monomorphic
+
 class Functor f => HasMorphism f s where
   morphism :: LensLike' f s Morphism
+
+instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+      => HasMorphism f (Kind.Node var) where
+#ifndef HLINT
+  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
+    Just m -> return m
+    Nothing -> do
+      perform_ (value.folded.contents.morphism) n
+      m <- morphisms.at (n^.int) <%?= \ case
+        _ | n^.value&is Kind._Bot -> Polymorphic
+        Nothing -> Monomorphic
+        Just m -> m
+      (bf, i) <- n^!binding.contents.tupled.second (act $ \ case
+        Kind.Scheme s -> s^!int
+        Kind.Type v_t -> v_t^!contents.int
+        Kind.Kind v_k -> v_k^!contents.int)
+      morphisms.at i ?<>= (bf, m)^.morphism
+      return m
+#endif
+
+instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+      => HasMorphism f (Type.Node var) where
+#ifndef HLINT
+  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
+    Just m -> return m
+    Nothing -> do
+      perform_ (value.folded.contents.morphism) n
+      perform_ (kind.contents.morphism) n
+      m <- morphisms.at (n^.int) <%?= \ case
+        _ | n^.value&is Type._Bot -> Polymorphic
+        Nothing -> Monomorphic
+        Just m -> m
+      (bf, i) <- n^!binding.contents.tupled.second (act $ \ case
+        Type.Scheme s -> s^!int
+        Type.Type v_t -> v_t^!contents.int)
+      morphisms.at i ?<>= (bf, m)^.morphism
+      return m
+#endif
+
+instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+      => HasMorphism f (Scheme.Node var) where
+#ifndef HLINT
+  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
+    Just m -> return m
+    Nothing -> do
+      perform_ (type'.contents.morphism) n
+      m <- morphisms.at (n^.int) <%?= \ case
+        Nothing -> Monomorphic
+        Just m -> m
+      n^!?binding.contents.Scheme._Binder._1.int >>= \ case
+        Nothing -> return ()
+        Just i -> morphisms.at i ?<>= m
+      return m
+#endif
+
+instance (Contravariant f, Functor f)
+      => HasMorphism f (BindingFlag, Morphism) where
+#ifndef HLINT
+  morphism = to $ \ case
+    (_, Monomorphic) -> Monomorphic
+    (Rigid, _) -> Inert
+    (Flexible, m) -> m
+#endif
+
+infix 4 <%?=, ?<>=
+
+(<%?=) :: (Profunctor p, MonadState s m)
+       => Over p ((,) b) s s (Maybe a) (Maybe b) -> p (Maybe a) b -> m b
+{-# INLINE (<%?=) #-}
+l <%?= f = l %%= rmap (\ b -> (b, Just b)) f
+                     
+
+(?<>=) :: (MonadState s m, Semigroup a) => ASetter' s (Maybe a) -> a -> m ()
+{-# INLINE (?<>=) #-}
+l ?<>= b = modify (l %~ Just . maybe b (<> b))

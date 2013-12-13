@@ -13,7 +13,7 @@ import Language.Wart.Binding
 import {-# SOURCE #-} qualified Language.Wart.Scheme.Syntax as Scheme
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
-infixr 9 -->
+infixr 9 ~>
 
 bot :: (MonadSupply Int m, MonadUnionFind f m)
     => ReaderT (Binding f) m (f (Node f))
@@ -24,7 +24,7 @@ star :: (MonadSupply Int m, MonadUnionFind f m)
 row :: (MonadSupply Int m, MonadUnionFind f m)
      => ReaderT (Binding f) m (f (Node f))
 
-(-->) :: (MonadSupply Int m, MonadUnionFind f m)
+(~>) :: (MonadSupply Int m, MonadUnionFind f m)
       => ReaderT (Binding f) m (f (Node f))
       -> ReaderT (Binding f) m (f (Node f))
       -> ReaderT (Binding f) m (f (Node f))

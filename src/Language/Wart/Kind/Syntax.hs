@@ -6,7 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Language.Wart.Kind.Syntax
-       ( Kind (..), _Bot, _Star, _Row, bot, star, row, (-->)
+       ( Kind (..), _Bot, _Star, _Row, bot, star, row, (~>)
        , Binding (..), bindingFlag, binder
        , Binder (..), _Scheme, _Type, _Kind
        , Node (..)
@@ -29,7 +29,7 @@ import qualified Language.Wart.Scheme.Syntax as Scheme
 import {-# SOURCE #-} Language.Wart.Type.Syntax (_Type)
 import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
-infixr 9 :->, -->
+infixr 9 :->, ~>
 
 data Kind a
   = Bot
@@ -62,11 +62,11 @@ row :: (MonadSupply Int m, MonadUnionFind f m)
      => ReaderT (Binding f) m (f (Node f))
 row = kind Row
 
-(-->) :: (MonadSupply Int m, MonadUnionFind f m)
+(~>) :: (MonadSupply Int m, MonadUnionFind f m)
       => ReaderT (Binding f) m (f (Node f))
       -> ReaderT (Binding f) m (f (Node f))
       -> ReaderT (Binding f) m (f (Node f))
-a --> b = kind $ a :-> b
+a ~> b = kind $ a :-> b
 
 kind :: (MonadSupply Int m, MonadUnionFind f m)
      => Kind (ReaderT (Binding f) m (f (Node f)))
