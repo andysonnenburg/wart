@@ -96,6 +96,7 @@ class Functor f => HasColor f s where
 
 instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
          HasColor f (Kind.Node var) where
+#ifndef HLINT
   color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
     Just c -> return c
     Nothing ->
@@ -104,9 +105,11 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
         Kind.Scheme s -> s^!color
         Kind.Type v_t -> v_t^!contents.color
         Kind.Kind v_k -> v_k^!contents.color).color
+#endif
 
 instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
          HasColor f (Type.Node var) where
+#ifndef HLINT
   color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
     Just c -> return c
     Nothing ->
@@ -114,15 +117,18 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
       n^!binding.contents.tupled.second (act $ \ case
         Type.Scheme s -> s^!color
         Type.Type v_t -> v_t^!contents.color).color
+#endif
 
 instance (Contravariant f, Functor f) => HasColor f (Scheme.Node var) where
   color = to $ const Green
 
 instance (Contravariant f, Functor f) => HasColor f (BindingFlag, Color) where
+#ifndef HLINT
   color = to $ \ case
     (Flexible, Green) -> Green
     (Rigid, _) -> Orange
     (Flexible, _) -> Red
+#endif
 
 data Morphism = Polymorphic | Monomorphic | Inert
 
