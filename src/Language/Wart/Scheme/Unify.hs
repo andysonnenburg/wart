@@ -11,15 +11,21 @@ module Language.Wart.Scheme.Unify
        , unify
        ) where
 
+import Control.Applicative
 import Control.Lens
 import Control.Lens.Action.Extras
 import Control.Lens.Extras
+import Control.Lens.Internal.Action (Effect)
 import Control.Lens.Tuple.Extras
 import Control.Monad.State.Strict
 import Control.Monad.Supply
 import Control.Monad.UnionFind
+import Data.Bag (Bag)
+import qualified Data.Bag as Bag
+import Data.Maybe (fromMaybe)
 import Data.IntMap.Strict (IntMap)
-import Data.Semigroup (Semigroup ((<>)))
+import qualified Data.IntMap.Strict as IntMap
+import Data.Semigroup (Semigroup ((<>)), mempty)
 import Language.Wart.Binding
 import Language.Wart.BindingFlag
 import qualified Language.Wart.Kind as Kind
@@ -60,51 +66,112 @@ class (MonadSupply Int m, MonadUnionFind f m) => Unify f m where
 #endif
 
 unify :: Unify f m
-      => Scheme.Node f
-      -> f (Type.Node f)
+      => f (Type.Node f)
       -> f (Type.Node f)
       -> m ()
-unify _ _ _ = return ()
+unify v_x v_y = do
+  s <- execUnifierT $ Type.unify v_x v_y
+  return ()
 
-type Unifier (f :: * -> *) = StateT (Colors, Morphisms)
+instance Unify f m => Kind.Unify f (UnifierT f m) where
+  throwKindError v_x v_y = lift $ throwKindError v_x v_y
+  merge v_x v_y = do
+    n_x <- v_x^!contents
+    n_y <- v_y^!contents
+    m_y <- merged.kinds.at (n_y^.int) <<.= Nothing <&> fromMaybe (Bag.singleton n_y)
+    merged.kinds.at (n_x^.int) %= Just . maybe (Bag.insert n_x m_y) (flip Bag.union m_y)
+    tellPermissionOf n_x
+    tellPermissionOf n_y
+    union v_x v_y
+  graft v_x v_y = do
+    grafted.kinds %= (v_x:)
+    n_y <- v_y^!contents
+    grafted.bots %= (n_y^.int:)
+    Kind.merge v_x v_y
+
+instance Unify f m => Type.Unify f (UnifierT f m) where
+  throwTypeError v_x v_y = lift $ throwTypeError v_x v_y
+  throwRowError l v_r = lift $ throwRowError l v_r
+  merge v_x v_y = do
+    n_x <- v_x^!contents
+    n_y <- v_y^!contents
+    m_y <- merged.types.at (n_y^.int) <<.= Nothing <&> fromMaybe (Bag.singleton n_y)
+    merged.types.at (n_x^.int) %= Just . maybe (Bag.insert n_x m_y) (flip Bag.union m_y)
+    tellPermissionOf n_x
+    tellPermissionOf n_y
+    union v_x v_y
+  graft v_x v_y = do
+    grafted.types %= (v_x:)
+    n_y <- v_y^!contents
+    grafted.bots %= (n_y^.int:)
+    Type.merge v_x v_y
+
+type Permissions = IntMap Permission
 
 data Permission = M | I | G | O | R
 
+tellPermissionOf :: (Monad m,
+                     HasMorphism (Effect (UnifierT var m) ()) s,
+                     HasColor (Effect (UnifierT var m) ()) s)
+                 => s -> UnifierT var m ()
+tellPermissionOf s = do
+  perform_ color s
+  perform_ morphism s
+
 #ifndef HLINT
-permission :: (Effective (Unifier f m) r f,
-               HasColor (First s f) s,
-               HasMorphism (Second Color f) s)
-           => LensLike' f s Permission
-permission = duplicated.first color.second morphism.to (\ case
+permissions :: Colors -> Morphisms -> Permissions
+permissions = IntMap.intersectionWith $ curry $ \ case
   (_, Monomorphic) -> M
   (_, Inert) -> I
   (Green, _) -> G
   (Orange, _) -> O
-  (Red, _) -> R)
+  (Red, _) -> R
 #endif
 
 type Colors = IntMap Color
 
-colors :: (Functor f, Field1 s t Colors Colors)
-       => (Colors -> f Colors)
-       -> s
-       -> f t
-colors = _1
+data Color = Green | Orange | Red
+
+colors :: Field3 s t Colors Colors => Lens s t Colors Colors
+colors = _3
 
 type Morphisms = IntMap Morphism
 
-morphisms :: (Functor f, Field2 s t Morphisms Morphisms)
-          => (Morphisms -> f Morphisms)
-          -> s
-          -> f t
-morphisms = _2
+data Morphism = Polymorphic | Monomorphic | Inert
 
-data Color = Green | Orange | Red
+instance Semigroup Morphism where
+  Polymorphic <> _ = Polymorphic
+  _ <> Polymorphic = Polymorphic
+  Inert <> _ = Inert
+  _ <> Inert = Inert
+  Monomorphic <> Monomorphic = Monomorphic
+
+morphisms :: Field4 s t Morphisms Morphisms => Lens s t Morphisms Morphisms
+morphisms = _4
+
+type Merged f = (IntMap (Bag (Kind.Node f)), IntMap (Bag (Type.Node f)))
+
+merged :: Field1 s t (Merged f) (Merged f) => Lens s t (Merged f) (Merged f)
+merged = _1
+
+type Grafted f = ([f (Kind.Node f)], [f (Type.Node f)], [Int])
+
+grafted :: Field2 s t (Grafted f) (Grafted f) => Lens s t (Grafted f) (Grafted f)
+grafted = _2
+
+kinds :: Field1 s t a b => Lens s t a b
+kinds = _1
+
+types :: Field2 s t a b => Lens s t a b
+types = _2
+
+bots :: Field3 s t [Int] [Int] => Lens s t [Int] [Int]
+bots = _3
 
 class Functor f => HasColor f s where
   color :: LensLike' f s Color
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
+instance (Effective (UnifierT var m) r f, MonadUnionFind var m) =>
          HasColor f (Kind.Node var) where
 #ifndef HLINT
   color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
@@ -117,7 +184,7 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m) =>
         Kind.Kind v_k -> v_k^!contents.color).color
 #endif
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
       => HasColor f (Type.Node var) where
 #ifndef HLINT
   color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
@@ -140,19 +207,10 @@ instance (Contravariant f, Functor f) => HasColor f (BindingFlag, Color) where
     (Flexible, _) -> Red
 #endif
 
-data Morphism = Polymorphic | Monomorphic | Inert
-
-instance Semigroup Morphism where
-  Polymorphic <> _ = Polymorphic
-  _ <> Polymorphic = Polymorphic
-  Inert <> _ = Inert
-  _ <> Inert = Inert
-  Monomorphic <> Monomorphic = Monomorphic
-
 class Functor f => HasMorphism f s where
   morphism :: LensLike' f s Morphism
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
       => HasMorphism f (Kind.Node var) where
 #ifndef HLINT
   morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
@@ -171,7 +229,7 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m)
       return m
 #endif
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
       => HasMorphism f (Type.Node var) where
 #ifndef HLINT
   morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
@@ -190,7 +248,7 @@ instance (Effective (Unifier var m) r f, MonadUnionFind var m)
       return m
 #endif
 
-instance (Effective (Unifier var m) r f, MonadUnionFind var m)
+instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
       => HasMorphism f (Scheme.Node var) where
 #ifndef HLINT
   morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
@@ -215,13 +273,50 @@ instance (Contravariant f, Functor f)
     (Flexible, m) -> m
 #endif
 
+newtype UnifierT f m a
+  = UnifierT { unUnifierT :: StateT (Merged f,
+                                     Grafted f,
+                                     Colors,
+                                     Morphisms) m a
+             }
+
+execUnifierT :: Monad m => UnifierT f m a -> m (Merged f, Grafted f, Permissions)
+execUnifierT m = do
+  s <- execStateT (unUnifierT m) mempty
+  return (s^.merged, s^.grafted, permissions (s^.colors) (s^.morphisms))
+
+instance Functor m => Functor (UnifierT f m) where
+  fmap f = UnifierT . fmap f . unUnifierT
+
+instance (Functor m, Monad m) => Applicative (UnifierT f m) where
+  pure = UnifierT . pure
+  f <*> a = UnifierT $ unUnifierT f <*> unUnifierT a
+
+instance Monad m => Monad (UnifierT f m) where
+  return = UnifierT . return
+  m >>= f = UnifierT $ unUnifierT m >>= unUnifierT . f
+  fail = UnifierT . fail
+
+instance MonadTrans (UnifierT f) where
+  lift = UnifierT . lift
+
+instance Monad m => MonadState (Merged f,
+                                Grafted f,
+                                Colors,
+                                Morphisms) (UnifierT f m) where
+  state = UnifierT . state
+  get = UnifierT get
+  put = UnifierT . put
+
+instance MonadSupply s m => MonadSupply s (UnifierT f m)
+instance MonadUnionFind f m => MonadUnionFind f (UnifierT f m)
+
 infix 4 <%?=, ?<>=
 
 (<%?=) :: (Profunctor p, MonadState s m)
        => Over p ((,) b) s s (Maybe a) (Maybe b) -> p (Maybe a) b -> m b
 {-# INLINE (<%?=) #-}
 l <%?= f = l %%= rmap (\ b -> (b, Just b)) f
-                     
 
 (?<>=) :: (MonadState s m, Semigroup a) => ASetter' s (Maybe a) -> a -> m ()
 {-# INLINE (?<>=) #-}
