@@ -36,6 +36,7 @@ library
     base >= 4.4 && < 5,
     containers,
     distributive,
+    lca,
     lens >= 4,
     mtl,
     profunctors,
@@ -73,6 +74,7 @@ library
     Control.Monad.UnionFind
     Control.Monad.UnionFind.Class
     Control.Monad.UnionFind.ST
+    Data.Bag
     Data.STIntRef
     Data.Stream
     -- Language.Wart.Lex

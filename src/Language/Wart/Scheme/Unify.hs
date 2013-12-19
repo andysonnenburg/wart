@@ -17,13 +17,15 @@ import Control.Lens.Action.Extras
 import Control.Lens.Extras
 import Control.Lens.Internal.Action (Effect)
 import Control.Lens.Tuple.Extras
+import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Bag (Bag)
 import qualified Data.Bag as Bag
-import Data.Maybe (fromMaybe)
 import Data.IntMap.Strict (IntMap)
+import Data.LCA.Online (Path)
+import Data.Maybe (fromMaybe)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Semigroup (Semigroup ((<>)), mempty)
 import Language.Wart.Binding
@@ -39,7 +41,7 @@ class (MonadSupply Int m, MonadUnionFind f m) => Unify f m where
   throwKindError :: f (Kind.Node f) -> f (Kind.Node f) -> m a
   throwTypeError :: f (Type.Node f) -> f (Type.Node f) -> m a
   throwRowError :: Label -> f (Type.Node f) -> m a
-  throwSchemeError :: Scheme.Node f -> Scheme.Node f -> m a
+  throwRebindError :: f (Type.Node f) -> f (Type.Node f) -> Int -> Int -> m a
 
 #ifndef HLINT
   default throwKindError :: (MonadTrans t, Unify f m)
@@ -60,9 +62,13 @@ class (MonadSupply Int m, MonadUnionFind f m) => Unify f m where
 #endif
 
 #ifndef HLINT
-  default throwSchemeError :: (MonadTrans t, Unify f m)
-                           => Scheme.Node f -> Scheme.Node f -> t m a
-  throwSchemeError x y = lift $ throwSchemeError x y
+  default throwRebindError :: (MonadTrans t, Unify f m)
+                           => f (Type.Node f)
+                           -> f (Type.Node f)
+                           -> Int
+                           -> Int
+                           -> t m a
+  throwRebindError v_x v_y i_x i_y = lift $ throwRebindError v_x v_y i_x i_y
 #endif
 
 unify :: Unify f m
@@ -70,8 +76,23 @@ unify :: Unify f m
       -> f (Type.Node f)
       -> m ()
 unify v_x v_y = do
+  v_x0 <- cloneType v_x
+  v_y0 <- cloneType v_y
   s <- execUnifierT $ Type.unify v_x v_y
+  -- checkCycles v_x v_y
+  -- join $
+  --   runRebinderT (rebind v_x v_y) (s^.merged) <$>
+  --   getVirtualBinders v_x v_y (s^.grafted.kinds) (s^.grafted.types) <*>
+  --   pure (s^.permissions)
+  -- runCheckerT (do
+  --   checkGrafts (s^.grafted.bots) (s^.permissions)
+  --   checkWeakens (s^.merged)
+  --   checkRaises v_x v_y
+  --   checkMerges (s^.merged)) v_x0 v_y0
   return ()
+
+rebind :: Monad m => f (Type.Node f) -> f (Type.Node f) -> RebinderT f m ()
+rebind = undefined
 
 instance Unify f m => Kind.Unify f (UnifierT f m) where
   throwKindError v_x v_y = lift $ throwKindError v_x v_y
@@ -84,7 +105,8 @@ instance Unify f m => Kind.Unify f (UnifierT f m) where
     tellPermissionOf n_y
     union v_x v_y
   graft v_x v_y = do
-    grafted.kinds %= (v_x:)
+    n_x <- v_x^!contents
+    grafted.kinds %= (n_x^.int:)
     n_y <- v_y^!contents
     grafted.bots %= (n_y^.int:)
     Kind.merge v_x v_y
@@ -101,10 +123,15 @@ instance Unify f m => Type.Unify f (UnifierT f m) where
     tellPermissionOf n_y
     union v_x v_y
   graft v_x v_y = do
-    grafted.types %= (v_x:)
+    n_x <- v_x^!contents
+    grafted.types %= (n_x^.int:)
     n_y <- v_y^!contents
     grafted.bots %= (n_y^.int:)
     Type.merge v_x v_y
+
+type VirtualBinders f = (IntMap (Kind.Node f), IntMap (Type.Node f))
+
+type Paths f = (IntMap (Path (Kind.Node f)), IntMap (Path (Type.Node f)))
 
 type Permissions = IntMap Permission
 
@@ -154,9 +181,9 @@ type Merged f = (IntMap (Bag (Kind.Node f)), IntMap (Bag (Type.Node f)))
 merged :: Field1 s t (Merged f) (Merged f) => Lens s t (Merged f) (Merged f)
 merged = _1
 
-type Grafted f = ([f (Kind.Node f)], [f (Type.Node f)], [Int])
+type Grafted = ([Int], [Int], [Int])
 
-grafted :: Field2 s t (Grafted f) (Grafted f) => Lens s t (Grafted f) (Grafted f)
+grafted :: Field2 s t Grafted Grafted => Lens s t Grafted Grafted
 grafted = _2
 
 kinds :: Field1 s t a b => Lens s t a b
@@ -273,14 +300,14 @@ instance (Contravariant f, Functor f)
     (Flexible, m) -> m
 #endif
 
-newtype UnifierT f m a
-  = UnifierT { unUnifierT :: StateT (Merged f,
-                                     Grafted f,
-                                     Colors,
-                                     Morphisms) m a
-             }
+newtype UnifierT f m a =
+  UnifierT { unUnifierT :: StateT (Merged f,
+                                   Grafted,
+                                   Colors,
+                                   Morphisms) m a
+           }
 
-execUnifierT :: Monad m => UnifierT f m a -> m (Merged f, Grafted f, Permissions)
+execUnifierT :: Monad m => UnifierT f m a -> m (Merged f, Grafted, Permissions)
 execUnifierT m = do
   s <- execStateT (unUnifierT m) mempty
   return (s^.merged, s^.grafted, permissions (s^.colors) (s^.morphisms))
@@ -301,7 +328,7 @@ instance MonadTrans (UnifierT f) where
   lift = UnifierT . lift
 
 instance Monad m => MonadState (Merged f,
-                                Grafted f,
+                                Grafted,
                                 Colors,
                                 Morphisms) (UnifierT f m) where
   state = UnifierT . state
@@ -310,6 +337,15 @@ instance Monad m => MonadState (Merged f,
 
 instance MonadSupply s m => MonadSupply s (UnifierT f m)
 instance MonadUnionFind f m => MonadUnionFind f (UnifierT f m)
+
+type RebinderT f m =
+  ReaderT (Merged f, VirtualBinders f, Permissions) (StateT (Paths f) m)
+
+runRebinderT :: RebinderT f m a -> Merged f -> Permissions -> m a
+runRebinderT = undefined
+
+cloneType :: f (Type.Node f) -> m (f (Type.Node f))
+cloneType = undefined
 
 infix 4 <%?=, ?<>=
 
