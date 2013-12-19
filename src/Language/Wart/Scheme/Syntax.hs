@@ -1,19 +1,83 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Scheme.Syntax
-       ( Scheme (..)
-       , Binding (..)
-       , Binder (..)
+       ( Scheme (..), scheme
+       , Binding (..), _Root, _Binder
+       , Binder (..), IsBinder (..)
+       , Node (..), type'
        ) where
 
+import Control.Applicative
+import Control.Lens
+import Control.Lens.Union
+import Control.Monad.Reader
+import Control.Monad.Supply
+import Control.Monad.UnionFind
 import GHC.Generics (Generic)
-import Language.Wart.Type
+import Language.Wart.Binding
+import Language.Wart.BindingFlag
+import Language.Wart.Node
+import {-# SOURCE #-} qualified Language.Wart.Type.Syntax as Type
 
-data Scheme f = G (f (Maybe (Scheme f))) (f (BoundType f)) deriving Generic
+data Scheme a = G deriving Generic
 
-data BoundType f = Type (f (Binding f)) (f (Type f))
+data Binding f = Root | Binder (Binder f) deriving Generic
+instance VariantA (Binding f) (Binding f) () ()
+instance VariantB (Binding f) (Binding f') (Binder f) (Binder f')
 
-data Binding f = Binder BindingFlag (Binder f)
+_Root :: Prism' (Binding f) ()
+_Root = _A
 
-data Binder f = Scheme (f (Scheme f)) | BoundType (f (BoundType f))
+_Binder :: Prism (Binding f) (Binding f') (Binder f) (Binder f')
+_Binder = _B
 
-data BindingFlag = Rigid | Flexible deriving Generic
+#ifndef HLINT
+instance (Choice p, Applicative f) =>
+         IsBinding p f (Binding a) (Maybe (Binding a)) (Binder a) where
+  tupled = dimap
+           (\ case
+               Root -> Left ()
+               Binder v -> Right (Flexible, v))
+           (either (const $ pure Nothing) (fmap $ \ case
+               (Flexible, v) -> Just $ Binder v
+               _ -> Nothing)) . right'
+#endif
+
+newtype Binder f = Scheme (Node f) deriving Generic
+instance Field1 (Binder f) (Binder f') (Node f) (Node f')
+
+class (Profunctor p, Functor f) => IsBinder p f s a | s -> a where
+  _Scheme :: Optic' p f s a
+
+instance Functor f => IsBinder (->) f (Binder a) (Node a) where
+  _Scheme = _1
+
+data Node f =
+  Node
+  {-# UNPACK #-} !Int
+  (f (Binding f))
+  (Scheme (Node f))
+  (f (Type.Node f)) deriving Generic
+instance Field1 (Node f) (Node f) Int Int
+instance Field2 (Node f) (Node f) (f (Binding f)) (f (Binding f))
+instance Field3 (Node f) (Node f) (Scheme (Node f)) (Scheme (Node f))
+instance Field4 (Node f) (Node f) (f (Type.Node f)) (f (Type.Node f))
+
+instance IsNode (Node f) (f (Binding f)) (Scheme (Node f)) where
+  int = _1
+  binding = _2
+  value = _3
+
+scheme :: (MonadReader (Binding f) m, MonadSupply Int m, MonadUnionFind f m)
+       => Type.Node f
+       -> m (Node f)
+scheme n_t = Node <$> supply <*> (new =<< ask) <*> pure G <*> new n_t
+
+type' :: Lens' (Node f) (f (Type.Node f))
+type' = _4

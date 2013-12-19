@@ -27,7 +27,9 @@ import Control.Applicative
 import Control.Lens.Prism
 import Data.Profunctor
 import Data.Proxy (Proxy (Proxy))
-import GHC.Generics (Generic, Rep, (:+:) (..), (:*:) (..), K1 (..), M1 (..), U1 (..), from, to)
+import GHC.Generics (Generic, Rep,
+                     (:+:) (..), (:*:) (..), K1 (..), M1 (..), U1 (..),
+                     from, to)
 
 class VariantA s t a b | s -> a, t -> b, s b -> t, t a -> s where
   _A :: Prism s t a b
@@ -110,8 +112,12 @@ class VariantI s t a b | s -> a, t -> b, s b -> t, t a -> s where
   _I = ix (Proxy :: Proxy N8)
 #endif
 
-instance VariantA (Either a c) (Either b c) a b
-instance VariantB (Either c a) (Either c b) a b
+instance VariantA Bool Bool () ()
+instance VariantB Bool Bool () ()
+instance VariantA (Maybe a) (Maybe a) () ()
+instance VariantB (Maybe a) (Maybe a') a a'
+instance VariantA (Either a b) (Either a' b) a a'
+instance VariantB (Either a b) (Either a b') b b'
 
 ix :: (Generic s, Generic t, GIxed n (Rep s) (Rep t) a b)
    => f n -> Prism s t a b
@@ -138,7 +144,7 @@ instance GIxed n s t a b => GIxed n (M1 i c s) (M1 i c t) a b where
 instance GIxed' (GSize s > n) n s s' t t' a b
       => GIxed n (s :+: s') (t :+: t') a b where
   {-# INLINE gix #-}
-  gix n = gix' (reproxySizeGT (Proxy :: Proxy s) n) n
+  gix = gix' (Proxy :: Proxy (GSize s > n))
 
 instance (IsGTuple s, IsGTuple s', IsGTuple t, IsGTuple t',
           IsTuple (GList (s :*: s')), IsTuple (GList (t :*: t')),
@@ -159,8 +165,8 @@ instance (GIxed n s t a b, s' ~ t') => GIxed' True n s s' t t' a b where
 instance (GIxed (Subtract (GSize s) n) s' t' a b, s ~ t)
       => GIxed' False n s s' t t' a b where
   {-# INLINE gix' #-}
-  gix' _ n = dimap (gsum Left Right) (either (pure . L1) (fmap R1)) . right' .
-    gix (reproxySubtractSize (Proxy :: Proxy s) n)
+  gix' _ _ = dimap (gsum Left Right) (either (pure . L1) (fmap R1)) . right' .
+    gix (Proxy :: Proxy (Subtract (GSize s) n))
 
 #ifndef HLINT
 data GTuple xs where
@@ -393,14 +399,6 @@ type instance GSize (K1 i c) = S Z
 type instance GSize (M1 i c f) = GSize f
 type instance GSize (a :+: b) = GSize a + GSize b
 type instance GSize (a :*: b) = S Z
-
-reproxySubtractSize :: f s -> g n -> Proxy (Subtract (GSize s) n)
-{-# INLINE reproxySubtractSize #-}
-reproxySubtractSize _ _ = Proxy
-
-reproxySizeGT :: f s -> g n -> Proxy (GSize s > n)
-{-# INLINE reproxySizeGT #-}
-reproxySizeGT _ _ = Proxy
 
 data Nat = Z | S Nat
 

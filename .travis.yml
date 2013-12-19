@@ -1,15 +1,15 @@
 language: haskell
 
 env:
-  - GHCVER=6.12.3
-  - GHCVER=7.0.1
-  - GHCVER=7.0.2
-  - GHCVER=7.0.3
-  - GHCVER=7.0.4
-  - GHCVER=7.2.1
-  - GHCVER=7.2.2
-  - GHCVER=7.4.1
-  - GHCVER=7.4.2
+  # - GHCVER=6.12.3
+  # - GHCVER=7.0.1
+  # - GHCVER=7.0.2
+  # - GHCVER=7.0.3
+  # - GHCVER=7.0.4
+  # - GHCVER=7.2.1
+  # - GHCVER=7.2.2
+  # - GHCVER=7.4.1
+  # - GHCVER=7.4.2
   - GHCVER=7.6.1
   - GHCVER=7.6.2
   - GHCVER=7.6.3
@@ -49,5 +49,6 @@ install:
   - $CABAL configure --enable-tests -v2
 
 script:
-  - $CABAL build
+  # https://ghc.haskell.org/trac/ghc/ticket/8184
+  - $CABAL build || $CABAL build || $CABAL build || $CABAL build || $CABAL build
   - $CABAL test --show-details=always

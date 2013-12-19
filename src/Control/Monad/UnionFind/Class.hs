@@ -1,16 +1,24 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 module Control.Monad.UnionFind.Class
        ( MonadUnionFind (..)
+       , contents
        ) where
 
 import Control.Applicative
+import Control.Lens
+import Control.Monad.Reader
 import Control.Monad.ST.Safe
-import Control.Monad.Trans.Class
+import qualified Control.Monad.State.Lazy as Lazy
+import qualified Control.Monad.State.Strict as Strict
 import qualified Control.Monad.UnionFind.ST as ST
 import Prelude hiding (read)
+
+infix 4 ===, /==
 
 class (Applicative m, Monad m) => MonadUnionFind f m | m -> f where
   new :: a -> m (f a)
@@ -57,6 +65,10 @@ class (Applicative m, Monad m) => MonadUnionFind f m | m -> f where
   x /== y = lift $ x /== y
 #endif
 
+contents :: MonadUnionFind f m => IndexPreservingAction m (f a) a
+{-# INLINE contents #-}
+contents = act read
+
 instance MonadUnionFind (ST.Var s) (ST s) where
   new = ST.new
   read = ST.read
@@ -65,3 +77,7 @@ instance MonadUnionFind (ST.Var s) (ST s) where
   unionWith = ST.unionWith
   (===) = (ST.===)
   (/==) = (ST./==)
+
+instance MonadUnionFind f m => MonadUnionFind f (ReaderT r m)
+instance MonadUnionFind f m => MonadUnionFind f (Lazy.StateT s m)
+instance MonadUnionFind f m => MonadUnionFind f (Strict.StateT s m)
