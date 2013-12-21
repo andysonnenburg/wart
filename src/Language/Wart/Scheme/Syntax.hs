@@ -42,11 +42,11 @@ instance (Choice p, Applicative f) =>
          IsBinding p f (Binding a) (Maybe (Binding a)) (Binder a) where
   tupled = dimap
            (\ case
-               Root -> Left ()
-               Binder v -> Right (Flexible, v))
+             Root -> Left ()
+             Binder v -> Right (Flexible, v))
            (either (const $ pure Nothing) (fmap $ \ case
-               (Flexible, v) -> Just $ Binder v
-               _ -> Nothing)) . right'
+             (Flexible, v) -> Just $ Binder v
+             _ -> Nothing)) . right'
 #endif
 
 newtype Binder f = Scheme (Node f) deriving Generic
@@ -62,7 +62,7 @@ data Node f =
   Node
   {-# UNPACK #-} !Int
   (f (Binding f))
-  (Scheme (Node f))
+  !(Scheme (Node f))
   (f (Type.Node f)) deriving Generic
 instance Field1 (Node f) (Node f) Int Int
 instance Field2 (Node f) (Node f) (f (Binding f)) (f (Binding f))

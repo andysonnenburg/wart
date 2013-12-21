@@ -72,7 +72,7 @@ a ~> b = kind $ a :-> b
 kind :: (MonadSupply Int m, MonadUnionFind f m)
      => Kind (ReaderT (Binding f) m (f (Node f)))
      -> ReaderT (Binding f) m (f (Node f))
-kind c = new <=< join $ newNode <$> (new =<< ask) <*> sequenceA c
+kind c = new =<< Node <$> supply <*> (new =<< ask) <*> sequenceA c
 
 data Binding f = Binding !BindingFlag !(Binder f) deriving Generic
 instance Field1 (Binding f) (Binding f) BindingFlag BindingFlag
@@ -83,7 +83,7 @@ instance (Profunctor p, Functor f) =>
   tupled = dimap (\ (Binding a b) -> (a, b)) (fmap $ uncurry Binding)
 
 data Binder f
-  = Scheme (Scheme.Node f)
+  = Scheme !(Scheme.Node f)
   | Type (f (Type.Node f))
   | Kind (f (Node f)) deriving Generic
 instance VariantA (Binder f) (Binder f) (Scheme.Node f) (Scheme.Node f)
@@ -105,7 +105,7 @@ data Node f =
   Node
   {-# UNPACK #-} !Int
   (f (Binding f))
-  (Kind (f (Node f))) deriving Generic
+  !(Kind (f (Node f))) deriving Generic
 instance Field1 (Node f) (Node f) Int Int
 instance Field2 (Node f) (Node f) (f (Binding f)) (f (Binding f))
 instance Field3 (Node f) (Node f) (Kind (f (Node f))) (Kind (f (Node f)))
@@ -114,9 +114,3 @@ instance IsNode (Node f) (f (Binding f)) (Kind (f (Node f))) where
   int = _1
   binding = _2
   value = _3
-
-newNode :: MonadSupply Int m
-        => f (Binding f)
-        -> Kind (f (Node f))
-        -> m (Node f)
-newNode b k = (\ x -> Node x b k) <$> supply

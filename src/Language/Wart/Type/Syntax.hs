@@ -57,7 +57,7 @@ import {-# SOURCE #-} qualified Language.Wart.Scheme.Syntax as Scheme
 
 data Type a
   = Bot
-  | Const Const
+  | Const !Const
   | App a a deriving (Functor, Foldable, Traversable, Generic)
 instance VariantA (Type a) (Type a) () ()
 instance VariantB (Type a) (Type a) Const Const
@@ -95,8 +95,9 @@ type' :: (MonadSupply Int m, MonadUnionFind f m)
       -> ReaderT (Kind.Binding f) m (f (Kind.Node f))
       -> ReaderT (Binding f) m (f (Node f))
 type' c m_k =
-  new <=< join $
-  newNode <$>
+  new =<<
+  Node <$>
+  supply <*>
   (new =<< ask) <*>
   sequenceA c <*>
   magnify (tupled.to (_2 %~ cloneBinder).re tupled) m_k
@@ -209,7 +210,7 @@ data Node f =
   Node
   {-# UNPACK #-} !Int
   (f (Binding f))
-  (Type (f (Node f)))
+  !(Type (f (Node f)))
   (f (Kind.Node f)) deriving Generic
 instance Field1 (Node f) (Node f) Int Int
 instance Field2 (Node f) (Node f) (f (Binding f)) (f (Binding f))
@@ -223,10 +224,3 @@ instance IsNode (Node f) (f (Binding f)) (Type (f (Node f))) where
 
 kind :: Lens' (Node f) (f (Kind.Node f))
 kind = _4
-
-newNode :: MonadSupply Int m
-        => f (Binding f)
-        -> Type (f (Node f))
-        -> f (Kind.Node f)
-        -> m (Node f)
-newNode b t k = (\ x -> Node x b t k) <$> supply
