@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Language.Wart.Scheme.Syntax (Scheme (..)) where
+module Language.Wart.Scheme.Internal (Scheme (..)) where
 
 import GHC.Generics (Generic)
 

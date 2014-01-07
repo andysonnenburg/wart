@@ -1,41 +1,32 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Kind.Syntax
        ( Kind (..)
-       , default'
-       , star
-       , row
-       , Kinded (..)
+       , _Bot, _Star, _Row
        ) where
 
 import Control.Lens
-import Control.Lens.Union
+import qualified Control.Lens.Union.Generics as Union
+import Data.Foldable (Foldable)
+import Data.Proxy
 import GHC.Generics (Generic)
-import Prelude hiding (read)
+import Type.Nat
 
-data Kind f
-  = Default
+data Kind a
+  = Bot
   | Star
   | Row
-  | f (Kind f) :-> f (Kind f) deriving Generic
+  | a :-> a deriving (Functor, Foldable, Traversable, Generic)
 
-instance VariantA (Kind f) (Kind f) () ()
-instance VariantB (Kind f) (Kind f) () ()
-instance VariantC (Kind f) (Kind f) () ()
-instance VariantD (Kind f) (Kind f') (f (Kind f), f (Kind f)) (f' (Kind f'), f' (Kind f'))
+_Bot :: Prism' (Kind a) ()
+_Bot = Union.ix (Proxy :: Proxy N0)
 
-default' :: Prism' (Kind f) ()
-default' = _A
+_Star :: Prism' (Kind a) ()
+_Star = Union.ix (Proxy :: Proxy N1)
 
-star :: Prism' (Kind f) ()
-star = _B
-
-row :: Prism' (Kind f) ()
-row = _C
-
-class Kinded f a | a -> f where
-  kind :: Getter a (f (Kind f))
+_Row :: Prism' (Kind a) ()
+_Row = Union.ix (Proxy :: Proxy N2)
