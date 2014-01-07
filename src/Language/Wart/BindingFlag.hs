@@ -5,15 +5,15 @@ module Language.Wart.BindingFlag
        ) where
 
 import Control.Lens
-import Control.Lens.Union
+import qualified Control.Lens.Union.Generics as Union
+import Data.Proxy
 import GHC.Generics (Generic)
+import Type.Nat
 
-data BindingFlag = Flexible | Rigid deriving (Show, Generic)
-instance VariantA BindingFlag BindingFlag () ()
-instance VariantB BindingFlag BindingFlag () ()
+data BindingFlag = Flexible | Rigid deriving (Show, Eq, Ord, Generic)
 
 _Flexible :: Prism' BindingFlag ()
-_Flexible = _A
+_Flexible = Union.ix (Proxy :: Proxy N0)
 
 _Rigid :: Prism' BindingFlag ()
-_Rigid = _B
+_Rigid = Union.ix (Proxy :: Proxy N1)

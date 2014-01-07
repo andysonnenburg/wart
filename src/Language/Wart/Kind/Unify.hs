@@ -13,38 +13,37 @@ import Control.Lens
 import Control.Monad.Extras
 import Control.Monad.Reader
 import Control.Monad.UnionFind
-import Language.Wart.Kind.Syntax as Kind
-import Language.Wart.Node
+import Language.Wart.Kind.Graphic as Kind
 
-class MonadUnionFind f m => Unify f m where
-  merge :: f (Kind.Node f) -> f (Kind.Node f) -> m ()
-  graft :: f (Kind.Node f) -> f (Kind.Node f) -> m ()
-  throwKindError :: f (Kind.Node f) -> f (Kind.Node f) -> m b
+class MonadUnionFind v m => Unify v m where
+  merge :: v (Node Kind v) -> v (Node Kind v) -> m ()
+  graft :: v (Node Kind v) -> v (Node Kind v) -> m ()
+  throwKindError :: Kind (v (Node Kind v)) -> Kind (v (Node Kind v)) -> m b
 
 #ifndef HLINT
-  default merge :: (MonadTrans t, Unify f m)
-                => f (Kind.Node f) -> f (Kind.Node f) -> t m ()
+  default merge :: (MonadTrans t, Unify v m)
+                => v (Node Kind v) -> v (Node Kind v) -> t m ()
   merge v_x v_y = lift $ merge v_x v_y
 #endif
 
 #ifndef HLINT
-  default graft :: (MonadTrans t, Unify f m)
-                => f (Kind.Node f) -> f (Kind.Node f) -> t m ()
+  default graft :: (MonadTrans t, Unify v m)
+                => v (Node Kind v) -> v (Node Kind v) -> t m ()
   graft v_x v_y = lift $ graft v_x v_y
 #endif
 
 #ifndef HLINT
-  default throwKindError :: (MonadTrans t, Unify f m)
-                         => f (Kind.Node f) -> f (Kind.Node f) -> t m b
-  throwKindError v_x v_y = lift $ throwKindError v_x v_y
+  default throwKindError :: (MonadTrans t, Unify v m)
+                         => Kind (v (Node Kind v)) -> Kind (v (Node Kind v)) -> t m b
+  throwKindError t_x t_y = lift $ throwKindError t_x t_y
 #endif
 
-instance Unify f m => Unify f (ReaderT r m)
+instance Unify v m => Unify v (ReaderT r m)
 
 #ifndef HLINT
-unify :: Unify f m => f (Kind.Node f) -> f (Kind.Node f) -> m ()
+unify :: Unify v m => v (Node Kind v) -> v (Node Kind v) -> m ()
 unify v_x v_y = whenM (v_x /== v_y) $
-  (,) <$> v_x^!contents.value <*> v_y^!contents.value >>= \ case
+  (,) <$> v_x^!contents.term <*> v_y^!contents.term >>= \ case
     (Bot, Bot) -> merge v_x v_y
     (_, Bot) -> graft v_x v_y
     (Bot, _) -> graft v_y v_x
@@ -54,5 +53,5 @@ unify v_x v_y = whenM (v_x /== v_y) $
       merge v_x v_y
       unify v_a v_a'
       unify v_b v_b'
-    _ -> throwKindError v_x v_y
+    (t_x, t_y) -> throwKindError t_x t_y
 #endif

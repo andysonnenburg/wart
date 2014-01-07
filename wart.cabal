@@ -33,7 +33,9 @@ library
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:
+    array,
     base >= 4.4 && < 5,
+    bytestring,
     containers,
     distributive,
     lca,
@@ -43,30 +45,38 @@ library
     semigroups,
     tagged,
     text,
-    transformers
+    transformers,
+    unordered-containers
   exposed-modules:
     Language.Wart
-    Language.Wart.Binding
     Language.Wart.BindingFlag
+    Language.Wart.Graphic
     -- Language.Wart.CodeGen
     Language.Wart.Kind
-    -- Language.Wart.Kind.Check
+    Language.Wart.Kind.Graphic
     Language.Wart.Kind.Syntax
     Language.Wart.Kind.Unify
-    Language.Wart.Node
+    Language.Wart.Label
     -- Language.Wart.Parse
+    Language.Wart.Loc
+    Language.Wart.Pos
     Language.Wart.Scheme
+    Language.Wart.Scheme.Graphic
     Language.Wart.Scheme.Syntax
     Language.Wart.Scheme.Unify
-    -- Language.Wart.Syntax
+    Language.Wart.Syntax
     Language.Wart.Type
+    Language.Wart.Type.Graphic
     Language.Wart.Type.Syntax
     Language.Wart.Type.Unify
   other-modules:
     Control.Lens.Action.Extras
     Control.Lens.Switch
+    Control.Lens.Iso.Generics
     Control.Lens.Tuple.Extras
+    Control.Lens.Tuple.Generics
     Control.Lens.Union
+    Control.Lens.Union.Generics
     Control.Monad.Extras
     Control.Monad.ST.Class
     Control.Monad.Supply
@@ -78,8 +88,11 @@ library
     Data.Bag
     Data.STIntRef
     Data.Stream
-    -- Language.Wart.Lex
-    -- Language.Wart.Parser
+    GHC.Generics.Lens.Extras
+    Language.Wart.Lex
+    Language.Wart.Parser
+    Language.Wart.Token
+    Type.Nat
 
 executable wartc
   hs-source-dirs: tools

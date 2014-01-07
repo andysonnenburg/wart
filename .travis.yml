@@ -49,6 +49,5 @@ install:
   - $CABAL configure --enable-tests -v2
 
 script:
-  # https://ghc.haskell.org/trac/ghc/ticket/8184
-  - $CABAL build || $CABAL build || $CABAL build || $CABAL build || $CABAL build
+  - $CABAL build
   - $CABAL test --show-details=always

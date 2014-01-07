@@ -1,138 +1,138 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
 module Language.Wart.Type.Unify
        ( Unify (..)
        , unify
        ) where
 
 import Control.Applicative (Applicative (..), (<$>))
-import Control.Lens (Effective, LensLike', (^.), (^!), _1, _2)
+import Control.Lens (Effective, LensLike', (^.), (^!), _1, _2, perform)
 import Control.Lens.Switch
 import Control.Lens.Tuple.Extras
 import Control.Monad.Extras
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
-import Language.Wart.Kind (Kind, (~>), _Row, row, star)
+import Language.Wart.BindingFlag
+import Language.Wart.Graphic
+import Language.Wart.Kind ((~>), _Row, row, star)
 import qualified Language.Wart.Kind as Kind
-import Language.Wart.Node
-import Language.Wart.Type.Syntax (Label,
-                                  Type (App, Bot, Const),
-                                  _App, _Bot, _Const, _Extend,
-                                  app, bot,
-                                  extend,
-                                  kind)
-import qualified Language.Wart.Type.Syntax as Type
-import Prelude (Bool (..), Int, Maybe (..),
-                ($), (.), (==), const, flip, id, otherwise, undefined)
+import Language.Wart.Type.Graphic (Label,
+                                   Type (App, Bot, Const),
+                                   _App, _Bot, _Const, _Extend,
+                                   app, bot,
+                                   extend,
+                                   kind)
 
-class (MonadSupply Int m, Kind.Unify f m) => Unify f m where
-  merge :: f (Type.Node f) -> f (Type.Node f) -> m ()
-  graft :: f (Type.Node f) -> f (Type.Node f) -> m ()
-  throwTypeError :: f (Type.Node f) -> f (Type.Node f) -> m a
-  throwRowError :: Label -> f (Type.Node f) -> m a
+class (MonadSupply Int m, Kind.Unify v m) => Unify v m where
+  merge :: v (Node Type v) -> v (Node Type v) -> m ()
+  graft :: v (Node Type v) -> v (Node Type v) -> m ()
+  throwTypeError :: Type (v (Node Type v)) -> Type (v (Node Type v)) -> m a
+  throwRowError :: Label -> Type (v (Node Type v)) -> m a
 
 #ifndef HLINT
-  default merge :: (MonadTrans t, Unify f m)
-                => f (Type.Node f) -> f (Type.Node f) -> t m ()
+  default merge :: (MonadTrans t, Unify v m)
+                => v (Node Type v) -> v (Node Type v) -> t m ()
   merge v_x v_y = lift $ merge v_x v_y
 #endif
 
 #ifndef HLINT
-  default graft :: (MonadTrans t, Unify f m)
-                => f (Type.Node f) -> f (Type.Node f) -> t m ()
+  default graft :: (MonadTrans t, Unify v m)
+                => v (Node Type v) -> v (Node Type v) -> t m ()
   graft v_x v_y = lift $ graft v_x v_y
 #endif
 
 #ifndef HLINT
-  default throwTypeError :: (MonadTrans t, Unify f m)
-                         => f (Type.Node f) -> f (Type.Node f) -> t m a
-  throwTypeError v_x v_y = lift $ throwTypeError v_x v_y
+  default throwTypeError :: (MonadTrans t, Unify v m)
+                         => Type (v (Node Type v)) -> Type (v (Node Type v)) -> t m a
+  throwTypeError t_x t_y = lift $ throwTypeError t_x t_y
 #endif
 
 #ifndef HLINT
-  default throwRowError :: (MonadTrans t, Unify f m)
-                        => Label -> f (Type.Node f) -> t m a
-  throwRowError l v_r = lift $ throwRowError l v_r
+  default throwRowError :: (MonadTrans t, Unify v m)
+                        => Label -> Type (v (Node Type v)) -> t m a
+  throwRowError l c_r = lift $ throwRowError l c_r
 #endif
 
-instance Unify f m => Unify f (ReaderT r m)
+instance Unify v m => Unify v (ReaderT r m)
 
-unify :: Unify f m => f (Type.Node f) -> f (Type.Node f) -> m ()
+unify :: Unify v m => v (Node Type v) -> v (Node Type v) -> m ()
 unify v_x v_y = whenM (v_x /== v_y) $ do
-  n_x <- read v_x
-  n_y <- read v_y
-  Kind.unify (n_x^.kind) (n_y^.kind)
-  switch n_x
-    $ caseM (kinded _Row.value.extension).: (\ ((v_l_t, l), v_r) -> do
-      (v_l_t', v_r') <- withoutTailOf v_x $ getRow l v_y
-      merge v_x v_y
-      unify v_l_t v_l_t'
-      unify v_r v_r')
-    $ default' $ case (n_x^.value, n_y^.value) of
-      (Bot, Bot) -> merge v_x v_y
-      (_, Bot) -> graft v_x v_y
-      (Bot, _) -> graft v_y v_x
-      (Const c, Const c') | c == c'-> merge v_x v_y
-      (App t1 t2, App t1' t2') -> do
+  n_x <- v_x^!contents
+  let v_k_x = n_x^.kind
+  n_y <- v_y^!contents
+  let v_k_y = n_y^.kind
+  Kind.unify v_k_x v_k_y
+  case (n_x^.term, n_y^.term) of
+    (Bot, Bot) -> merge v_x v_y
+    (_, Bot) -> graft v_x v_y
+    (Bot, _) -> graft v_y v_x
+    (Const c, Const c') | c == c'-> merge v_x v_y
+    (t_x, t_y) ->
+      switch (v_k_x, t_x)
+      $ caseM (first (contents.term._Row)._2.extension).:
+      (\ ((v_l_t_x, l), v_r_x) -> do
+        (v_l_t_y, v_r_y) <- withoutTailOf v_x $ getRow l v_y
         merge v_x v_y
-        unify t1 t1'
-        unify t2 t2'
-      _ -> throwTypeError v_x v_y
+        unify v_l_t_x v_l_t_y
+        unify v_r_x v_r_y)
+      $ default' $ case (t_x, t_y) of
+        (App t1 t2, App t1' t2') -> do
+          merge v_x v_y
+          unify t1 t1'
+          unify t2 t2'
+        _ -> throwTypeError t_x t_y
 
-getRow :: (Unify f m, MonadReader (f (Type.Node f)) m)
+getRow :: (Unify v m, MonadReader (v (Node Type v)) m)
        => Label
-       -> f (Type.Node f)
-       -> m (f (Type.Node f), f (Type.Node f))
-getRow l v_r0 = read v_r0 >>= \ n_r0 -> switch (n_r0^.value)
+       -> v (Node Type v)
+       -> m (v (Node Type v), v (Node Type v))
+getRow l v_r0 = v_r0^!contents >>= \ n_r0 ->
+  let c_r0 = n_r0^.term in
+  switch c_r0
   $ case' _Bot.: (\ () -> do
-    whenM (isTailOf v_r0 =<< ask) $ throwTypeError v_r0 =<< ask
+    whenM (isTailOf v_r0 =<< ask) $
+      throwTypeError c_r0 =<< perform (contents.term) =<< ask
     withBindingOf n_r0 $ do
       v_r1 <- bot row
       v_l_t1 <- app (extend l) (bot star) (row ~> row)
       join $ graft <$> app (pure v_l_t1) (pure v_r1) row <*> pure v_r0
       return (v_l_t1, v_r1))
   $ caseM extension.: (\ ((v_l_t1, l'), v_r1) ->
-    if l' == l
+    if l == l'
     then return (v_l_t1, v_r1)
     else do
-      n_r1 <- read v_r1
       (v_l_t2, v_r2) <- getRow l v_r1
-      v_r3 <- withBindingOf n_r0 $ app (pure v_l_t1) (pure v_r2) row
-      v_r0' <- withBindingOf n_r1 $ app (pure v_l_t2) (pure v_r3) row
-      merge v_r0 v_r0'
-      return (v_l_t2, v_r3))
-  $ default' $ throwRowError l v_r0
+      (v_l_t2, ) <$> withBindingOf n_r0 (app (pure v_l_t1) (pure v_r2) row))
+  $ default' $ throwRowError l c_r0
 
-withoutTailOf :: f (Type.Node f) -> ReaderT (f (Type.Node f)) m a -> m a
+withoutTailOf :: f (Node Type f) -> ReaderT (f (Node Type f)) m a -> m a
 withoutTailOf = flip runReaderT
 
-isTailOf :: MonadUnionFind f m => f (Type.Node f) -> f (Type.Node f) -> m Bool
+isTailOf :: MonadUnionFind f m => f (Node Type f) -> f (Node Type f) -> m Bool
 v_x `isTailOf` v_y =
   switch v_y
-  $ caseM (contents.value._App._2).:
+  $ caseM (contents.term._App._2).:
   (\ v_ys -> v_x === v_ys)
   $ default' $ return False
 
-withBindingOf :: MonadUnionFind f m
-              => Type.Node f
-              -> ReaderT (Type.Binding f) m a
+withBindingOf :: MonadUnionFind v m
+              => Node Type v
+              -> ReaderT (BindingFlag, Binder Type v) m a
               -> m a
-withBindingOf n m = runReaderT m =<< n^!binding.contents
-
-kinded :: (Effective m r f, MonadUnionFind var m)
-       => LensLike' (First (Type.Node var) f) (Kind (var (Kind.Node var))) a
-       -> LensLike' f (Type.Node var) (Type.Node var)
-kinded l = duplicated.first (kind.contents.value.l)._2
+withBindingOf n m =
+  runReaderT m =<<
+  n^!duplicated.
+  first (bindingFlag.contents).
+  second (binder.contents)
 
 extension :: (Applicative f, Effective m r f, MonadUnionFind var m)
           => LensLike' f
-             (Type (var (Type.Node var)))
-             ((var (Type.Node var), Label), var (Type.Node var))
-extension = _App.first (duplicated.second (contents.value._App._1.
-                                           contents.value._Const._Extend))
+             (Type (var (Node Type var)))
+             ((var (Node Type var), Label), var (Node Type var))
+extension = _App.first (duplicated.second (contents.term._App._1.
+                                           contents.term._Const._Extend))

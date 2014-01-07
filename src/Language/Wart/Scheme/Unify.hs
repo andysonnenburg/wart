@@ -1,11 +1,15 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Language.Wart.Scheme.Unify
        ( Unify (..)
        , unify
@@ -16,154 +20,321 @@ import Control.Lens
 import Control.Lens.Action.Extras
 import Control.Lens.Extras
 import Control.Lens.Internal.Action (Effect)
+import Control.Lens.Switch
 import Control.Lens.Tuple.Extras
+import qualified Control.Lens.Tuple.Generics as Tuple
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Bag (Bag)
 import qualified Data.Bag as Bag
-import Data.IntMap.Strict (IntMap)
+import Data.Foldable (Foldable, for_)
+import Data.IntMap.Strict (IntMap, (!))
+import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
 import Data.LCA.Online (Path)
 import Data.Maybe (fromMaybe)
-import qualified Data.IntMap.Strict as IntMap
+import Data.Proxy
 import Data.Semigroup (Semigroup ((<>)), mempty)
-import Language.Wart.Binding
+import GHC.Generics (Generic)
 import Language.Wart.BindingFlag
-import qualified Language.Wart.Kind as Kind
-import Language.Wart.Node
-import Language.Wart.Scheme.Syntax (type')
-import qualified Language.Wart.Scheme.Syntax as Scheme
-import Language.Wart.Type (Label, kind)
+import Language.Wart.Graphic
+import Language.Wart.Kind (Kind)
+import Language.Wart.Scheme.Graphic (Scheme)
+import qualified Language.Wart.Scheme.Graphic as Scheme
+import Language.Wart.Type (Type, Label, kind)
 import qualified Language.Wart.Type as Type
+import Type.Nat
 
-class (MonadSupply Int m, MonadUnionFind f m) => Unify f m where
-  throwKindError :: f (Kind.Node f) -> f (Kind.Node f) -> m a
-  throwTypeError :: f (Type.Node f) -> f (Type.Node f) -> m a
-  throwRowError :: Label -> f (Type.Node f) -> m a
-  throwRebindError :: f (Type.Node f) -> f (Type.Node f) -> Int -> Int -> m a
+class (MonadSupply Int m, MonadUnionFind v m) => Unify v m | m -> v where
+  throwKindError :: Kind (v (Node Kind v)) -> Kind (v (Node Kind v)) -> m a
+  throwTypeError :: Type (v (Node Type v)) -> Type (v (Node Type v)) -> m a
+  throwRowError :: Label -> Type (v (Node Type v)) -> m a
+  throwGraftError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
+  throwRaiseError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
+  throwWeakenError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
+  throwMergeError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
 
 #ifndef HLINT
-  default throwKindError :: (MonadTrans t, Unify f m)
-                         => f (Kind.Node f) -> f (Kind.Node f) -> t m b
-  throwKindError v_x v_y = lift $ throwKindError v_x v_y
+  default throwKindError :: (MonadTrans t, Unify v m)
+                         =>  Kind (v (Node Kind v)) -> Kind (v (Node Kind v)) -> t m b
+  throwKindError c_x c_y = lift $ throwKindError c_x c_y
 #endif
 
 #ifndef HLINT
-  default throwTypeError :: (MonadTrans t, Unify f m)
-                         => f (Type.Node f) -> f (Type.Node f) -> t m a
-  throwTypeError v_x v_y = lift $ throwTypeError v_x v_y
+  default throwTypeError :: (MonadTrans t, Unify v m)
+                         => Type (v (Node Type v)) -> Type (v (Node Type v)) -> t m a
+  throwTypeError c_x c_y = lift $ throwTypeError c_x c_y
 #endif
 
 #ifndef HLINT
-  default throwRowError :: (MonadTrans t, Unify f m)
-                        => Label -> f (Type.Node f) -> t m a
-  throwRowError l v_r = lift $ throwRowError l v_r
+  default throwRowError :: (MonadTrans t, Unify v m)
+                        => Label -> Type (v (Node Type v)) -> t m a
+  throwRowError l c = lift $ throwRowError l c
 #endif
 
 #ifndef HLINT
-  default throwRebindError :: (MonadTrans t, Unify f m)
-                           => f (Type.Node f)
-                           -> f (Type.Node f)
-                           -> Int
-                           -> Int
-                           -> t m a
-  throwRebindError v_x v_y i_x i_y = lift $ throwRebindError v_x v_y i_x i_y
+  default throwGraftError :: (MonadTrans t, Unify v m)
+                          => Int -> v (Node Type v) -> v (Node Type v) -> t m a
+  throwGraftError i v_x v_y = lift $ throwGraftError i v_x v_y
 #endif
 
-unify :: Unify f m
-      => f (Type.Node f)
-      -> f (Type.Node f)
-      -> m ()
+#ifndef HLINT
+  default throwRaiseError :: (MonadTrans t, Unify v m)
+                          => Int -> v (Node Type v) -> v (Node Type v) -> t m a
+  throwRaiseError i v_x v_y = lift $ throwRaiseError i v_x v_y
+#endif
+
+#ifndef HLINT
+  default throwWeakenError :: (MonadTrans t, Unify v m)
+                           => Int -> v (Node Type v) -> v (Node Type v) -> t m a
+  throwWeakenError i v_x v_y = lift $ throwWeakenError i v_x v_y
+#endif
+
+#ifndef HLINT
+  default throwMergeError :: (MonadTrans t, Unify v m)
+                          => Int -> v (Node Type v) -> v (Node Type v) -> t m a
+  throwMergeError i v_x v_y = lift $ throwMergeError i v_x v_y
+#endif
+
+unify :: Unify v m => v (Node Type v) -> v (Node Type v) -> m ()
 unify v_x v_y = do
-  v_x0 <- cloneType v_x
-  v_y0 <- cloneType v_y
+  Two v_x0 v_y0 <- cloneTypes $ Two v_x v_y
+  
   s <- execUnifierT $ Type.unify v_x v_y
-  checkCycles v_x v_y
-  join $
-    runRebinderT (rebind v_x v_y) (s^.merged) <$>
-    getVirtualBinders (s^.grafted.kinds) (s^.grafted.types) <*>
-    pure (s^.permissions)
+
+  checkCycles v_x
+
+  forOf_ _3 (s^.mergedBindingFlags) updateBindingFlags
+
+  (b2_t, b2_k) <- getVirtualBinders v_x (s^.graftedNonBots)
+
+  updateBinders
+    v_x
+    (sunion (s^.mergedTypeBinders&traversed.traversed %~ view _3) b2_t)
+    (sunion (s^.mergedKindBinders&traversed.traversed %~ view _3) b2_k)
+
   runCheckerT (do
-    checkGrafts $ s^.grafted.bots
-    checkWeakens $ s^.merged.kinds
-    checkWeakens $ s^.merged.types
-    checkRaises $ s^.merged.kinds
-    checkRaises $ s^.merged.types
-    checkMerges $ s^.merged.kinds
-    checkMerges $ s^.merged.types) v_x0 v_y0 (s^.permissions)
+    for_ (s^.graftedBots)
+      checkGraft
+    forOf_ (folded.folded) (s^.mergedTypeBinders) $ \ (i, b, v_b) ->
+      checkTypeRaise i b v_b
+    forOf_ (folded.folded) (s^.mergedKindBinders) $ \ (i, b, v_b) ->
+      checkKindRaise i b v_b
+    forOf_ (folded.folded) (s^.mergedBindingFlags) $ \ (i, bf, v_bf) ->
+      checkWeaken i bf v_bf)
+    (s^.permissions)
+    v_x0
+    v_y0
 
-rebind :: Monad m => f (Type.Node f) -> f (Type.Node f) -> RebinderT f m ()
-rebind = undefined
+#ifndef HLINT
+cloneTypes :: (Traversable t, MonadUnionFind v m)
+           => t (v (Node Type v)) -> m (t (v (Node Type v)))
+cloneTypes =
+  flip evalStateT (IntMap.empty, IntMap.empty) .
+  traverse cloneType
+  where
+    cloneType v_t = do
+      n_t <- v_t^!contents
+      use (_1.at (n_t^.label)) >>= \ case
+        Just v_t' -> return v_t'
+        Nothing -> do
+          v_bf' <- new =<< n_t^!bindingFlag.contents
+          v_b' <- n_t^!binder.contents >>= (\ case
+            Type.Scheme s ->
+              return $ _Scheme#s
+            Type.Type v_t' -> do
+              i_t' <- v_t'^!contents.label
+              review _Type <$> use (_1.to (!i_t'))) >>= new
+          v_k' <- cloneKind $ n_t^.kind
+          v_t' <- new $ n_t
+            &bindingFlag .~ v_bf'
+            &binder .~ v_b'
+            &kind .~ v_k'
+          _1.at (n_t^.label) <?= v_t'
+    cloneKind = undefined
+#endif
 
-instance Unify f m => Kind.Unify f (UnifierT f m) where
-  throwKindError v_x v_y = lift $ throwKindError v_x v_y
-  merge v_x v_y = do
-    n_x <- v_x^!contents
-    n_y <- v_y^!contents
-    m_y <- merged.kinds.at (n_y^.int) <<.= Nothing <&> fromMaybe (Bag.singleton n_y)
-    merged.kinds.at (n_x^.int) %= Just . maybe (Bag.insert n_x m_y) (flip Bag.union m_y)
-    tellPermissionOf n_x
-    tellPermissionOf n_y
-    union v_x v_y
-  graft v_x v_y = do
-    n_x <- v_x^!contents
-    grafted.kinds %= (v_x:)
-    n_y <- v_y^!contents
-    grafted.bots %= (n_y^.int:)
-    Kind.merge v_x v_y
+getVirtualBinders :: v (Node Type v) -> IntSet -> m (VirtualBinders v)
+getVirtualBinders = undefined
 
-instance Unify f m => Type.Unify f (UnifierT f m) where
-  throwTypeError v_x v_y = lift $ throwTypeError v_x v_y
-  throwRowError l v_r = lift $ throwRowError l v_r
-  merge v_x v_y = do
-    n_x <- v_x^!contents
-    n_y <- v_y^!contents
-    m_y <- merged.types.at (n_y^.int) <<.= Nothing <&> fromMaybe (Bag.singleton n_y)
-    merged.types.at (n_x^.int) %= Just . maybe (Bag.insert n_x m_y) (flip Bag.union m_y)
-    tellPermissionOf n_x
-    tellPermissionOf n_y
-    union v_x v_y
-  graft v_x v_y = do
-    n_x <- v_x^!contents
-    grafted.types %= (v_x:)
-    n_y <- v_y^!contents
-    grafted.bots %= (n_y^.int:)
-    Type.merge v_x v_y
+newtype IdT m a = IdT { runIdT :: m a }
 
-type VirtualBinders f = (IntMap (Kind.Node f), IntMap (Type.Node f))
+instance Functor m => Functor (IdT m) where
+  fmap f = IdT . fmap f . runIdT
 
-type Paths f = (IntMap (Path (Kind.Node f)), IntMap (Path (Type.Node f)))
+instance Applicative m => Applicative (IdT m) where
+  pure = IdT . pure
+  f <*> a = IdT $ runIdT f <*> runIdT a
+
+instance Monad m => Monad (IdT m) where
+  return = IdT . return
+  m >>= f = IdT $ runIdT m >>= runIdT . f
+  fail = IdT . fail
+
+instance MonadTrans IdT where
+  lift = IdT
+
+instance MonadReader r m => MonadReader r (IdT m) where
+  ask = lift ask
+  local f = lift . local f . runIdT
+
+instance MonadUnionFind v m => MonadUnionFind v (IdT m)
+
+type UnifierT v m = IdT (StateT (UnifierState v) m)
+
+data UnifierState v =
+  UnifierState
+  (MergedBindingFlags v)
+  (MergedTypeBinders v)
+  (MergedKindBinders v)
+  GraftedNonBots
+  GraftedBots
+  Colors
+  Morphisms deriving Generic
+
+type MergedBindingFlags v = IntMap (Bag (Int, BindingFlag, v BindingFlag))
+type MergedTypeBinders v = IntMap (Bag (Int, Binder Type v, v (Binder Type v)))
+type MergedKindBinders v = IntMap (Bag (Int, Binder Kind v, v (Binder Kind v)))
+type GraftedNonBots = IntSet
+type GraftedBots = [Int]
+
+mergedBindingFlags :: Lens' (UnifierState v) (MergedBindingFlags v)
+mergedBindingFlags = Tuple.ix (Proxy :: Proxy N0)
+
+mergedTypeBinders :: Lens' (UnifierState v) (MergedTypeBinders v)
+mergedTypeBinders = Tuple.ix (Proxy :: Proxy N1)
+
+mergedKindBinders :: Lens' (UnifierState v) (MergedKindBinders v)
+mergedKindBinders = Tuple.ix (Proxy :: Proxy N2)
+
+graftedNonBots :: Lens' (UnifierState v) GraftedNonBots
+graftedNonBots = Tuple.ix (Proxy :: Proxy N3)
+
+graftedBots :: Lens' (UnifierState v) GraftedBots
+graftedBots = Tuple.ix (Proxy :: Proxy N4)
+
+execUnifierT :: Monad m => UnifierT v m a -> m (UnifierState v)
+execUnifierT =
+  flip execStateT (UnifierState mempty mempty mempty mempty mempty mempty mempty) .
+  runIdT
+
+type CheckerT v m = IdT (ReaderT (CheckerEnv v) m)
+
+data CheckerEnv v =
+  CheckerEnv
+  (v (Node Type v))
+  (v (Node Type v))
+  Permissions deriving Generic
+instance Field1 (CheckerEnv v) (CheckerEnv v) (v (Node Type v)) (v (Node Type v))
+instance Field2 (CheckerEnv v) (CheckerEnv v) (v (Node Type v)) (v (Node Type v))
+
+runCheckerT :: CheckerT v m a
+            -> Permissions
+            -> v (Node Type v)
+            -> v (Node Type v)
+            -> m a
+runCheckerT m ps v_x v_y = runReaderT (runIdT m) (CheckerEnv v_x v_y ps)
 
 type Permissions = IntMap Permission
 
-data Permission = M | I | G | O | R
+class HasPermission s where
+  permissions :: Lens' s Permissions
 
-tellPermissionOf :: (Monad m,
-                     HasMorphism (Effect (UnifierT var m) ()) s,
-                     HasColor (Effect (UnifierT var m) ()) s)
-                 => s -> UnifierT var m ()
-tellPermissionOf s = do
-  perform_ color s
-  perform_ morphism s
+checkCycles :: MonadUnionFind v m => v (Node Type v) -> m ()
+checkCycles = undefined
+
+updateBindingFlags :: MonadUnionFind v m
+                   => Foldable t => t (v BindingFlag) -> RebinderT m ()
+updateBindingFlags v_bfs = for2_ v_bfs $ \ v_bf_x v_bf_y -> do
+  bf_x <- v_bf_x^!contents
+  bf_y <- v_bf_y^!contents
+  union v_bf_x v_bf_y
+  write v_bf_x $! max bf_x bf_y
+
+updateBinders :: v (Node Type v)
+              -> IntMap (Bag (Binder Type v))
+              -> IntMap (Bag (Binder Kind v))
+              -> RebinderT m ()
+updateBinders = undefined
 
 #ifndef HLINT
-permissions :: Colors -> Morphisms -> Permissions
-permissions = IntMap.intersectionWith $ curry $ \ case
-  (_, Monomorphic) -> M
-  (_, Inert) -> I
-  (Green, _) -> G
-  (Orange, _) -> O
-  (Red, _) -> R
+checkGraft :: (Applicative m, Monad m) => Int -> CheckerT v m ()
+checkGraft i = view (permissions.at i) >>= \ case
+  Just G -> return ()
+  _ -> join $ throwGraftError i <$> view _1 <*> view _2
 #endif
+
+#ifndef HLINT
+checkTypeRaise :: MonadUnionFind v m
+               => Int
+               -> Binder Type v
+               -> v (Binder Type v)
+               -> CheckerT v m ()
+checkTypeRaise i b v_b = view (permissions.at i) >>= \ case
+  _ -> return ()
+  Just R -> do
+    b' <- v_b^!contents
+    switch (b, b')
+      $ case' (first (_Scheme.label).second (_Scheme.label)).:
+      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError')
+      $ caseM (first (_Type.contents.label).second (_Type.contents.label)).:
+      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError')
+      $ default' $ throwRaiseError'
+  where
+    throwRaiseError' = join $ throwRaiseError i <$> view _1 <*> view _2
+#endif
+
+#ifndef HLINT
+checkKindRaise :: MonadUnionFind v m
+               => Int
+               -> Binder Kind v
+               -> v (Binder Kind v)
+               -> CheckerT v m ()
+checkKindRaise i b v_b = view (permissions.at i) >>= \ case
+  _ -> return ()
+  Just R -> do
+    b' <- v_b^!contents
+    switch (b, b')
+      $ case' (first (_Scheme.label).second (_Scheme.label)).:
+      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError')
+      $ caseM (first (_Type.contents.label).second (_Type.contents.label)).:
+      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError')
+      $ caseM (first (_Kind.contents.label).second (_Kind.contents.label)).:
+      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError')
+      $ default' $ throwRaiseError'
+  where
+    throwRaiseError' = join $ throwRaiseError i <$> view _1 <*> view _2
+#endif
+
+#ifndef HLINT
+checkWeaken :: MonadUnionFind v m
+            => Int
+            -> BindingFlag
+            -> v BindingFlag
+            -> CheckerT v m ()
+checkWeaken i bf v_bf = view (permissions.at i) >>= \ case
+  _ -> return ()
+  Just R -> do
+    bf' <- v_bf^!contents
+    when (bf /= bf') $ join $ throwWeakenError i <$> view _1 <*> view _2
+#endif
+
+type RebinderT m a = m a
+
+runRebinderT :: RebinderT m a -> m a
+runRebinderT = id
+
+type VirtualBinders v = (IntMap (Bag (Binder Type v)), IntMap (Bag (Binder Kind v)))
+
+type Paths v = (IntMap (Path (Node Kind v)), IntMap (Path (Node Type v)))
+
+data Permission = M | I | G | O | R
 
 type Colors = IntMap Color
 
 data Color = Green | Orange | Red
-
-colors :: Field3 s t Colors Colors => Lens s t Colors Colors
-colors = _3
 
 type Morphisms = IntMap Morphism
 
@@ -176,220 +347,17 @@ instance Semigroup Morphism where
   _ <> Inert = Inert
   Monomorphic <> Monomorphic = Monomorphic
 
-morphisms :: Field4 s t Morphisms Morphisms => Lens s t Morphisms Morphisms
-morphisms = _4
+sunion :: Semigroup a => IntMap a -> IntMap a -> IntMap a
+sunion = IntMap.unionWith (<>)
 
-type Merged f = (IntMap (Bag (Kind.Node f)), IntMap (Bag (Type.Node f)))
-
-merged :: Field1 s t (Merged f) (Merged f) => Lens s t (Merged f) (Merged f)
-merged = _1
-
-type Grafted f = ([f (Kind.Node f)], [f (Type.Node f)], [Int])
-
-grafted :: Field2 s t (Grafted f) (Grafted f) => Lens s t (Grafted f) (Grafted f)
-grafted = _2
-
-kinds :: Field1 s t a b => Lens s t a b
-kinds = _1
-
-types :: Field2 s t a b => Lens s t a b
-types = _2
-
-bots :: Field3 s t [Int] [Int] => Lens s t [Int] [Int]
-bots = _3
-
-class Functor f => HasColor f s where
-  color :: LensLike' f s Color
-
-instance (Effective (UnifierT var m) r f, MonadUnionFind var m) =>
-         HasColor f (Kind.Node var) where
 #ifndef HLINT
-  color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
-    Just c -> return c
-    Nothing ->
-      (colors.at (n^.int) <?=) =<<
-      n^!binding.contents.tupled.second (act $ \ case
-        Kind.Scheme s -> s^!color
-        Kind.Type v_t -> v_t^!contents.color
-        Kind.Kind v_k -> v_k^!contents.color).color
+for2_ :: (Applicative f, Monad f, Foldable t) => t a -> (a -> a -> f b) -> f ()
+for2_ xs f = flip evalStateT Nothing $ for_ xs $ \ x -> get >>= \ case
+  Just y -> lift (f y x) *> put (Just x)
+  Nothing -> return ()
 #endif
 
-instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
-      => HasColor f (Type.Node var) where
-#ifndef HLINT
-  color = act $ \ n -> use (colors.at (n^.int)) >>= \ case
-    Just c -> return c
-    Nothing ->
-      (colors.at (n^.int) <?=) =<<
-      n^!binding.contents.tupled.second (act $ \ case
-        Type.Scheme s -> s^!color
-        Type.Type v_t -> v_t^!contents.color).color
-#endif
-
-instance (Contravariant f, Functor f) => HasColor f (Scheme.Node var) where
-  color = to $ const Green
-
-instance (Contravariant f, Functor f) => HasColor f (BindingFlag, Color) where
-#ifndef HLINT
-  color = to $ \ case
-    (Flexible, Green) -> Green
-    (Rigid, _) -> Orange
-    (Flexible, _) -> Red
-#endif
-
-class Functor f => HasMorphism f s where
-  morphism :: LensLike' f s Morphism
-
-instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
-      => HasMorphism f (Kind.Node var) where
-#ifndef HLINT
-  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
-    Just m -> return m
-    Nothing -> do
-      perform_ (value.folded.contents.morphism) n
-      m <- morphisms.at (n^.int) <%?= \ case
-        _ | n^.value&is Kind._Bot -> Polymorphic
-        Nothing -> Monomorphic
-        Just m -> m
-      (bf, i) <- n^!binding.contents.tupled.second (act $ \ case
-        Kind.Scheme s -> s^!int
-        Kind.Type v_t -> v_t^!contents.int
-        Kind.Kind v_k -> v_k^!contents.int)
-      morphisms.at i ?<>= (bf, m)^.morphism
-      return m
-#endif
-
-instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
-      => HasMorphism f (Type.Node var) where
-#ifndef HLINT
-  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
-    Just m -> return m
-    Nothing -> do
-      perform_ (value.folded.contents.morphism) n
-      perform_ (kind.contents.morphism) n
-      m <- morphisms.at (n^.int) <%?= \ case
-        _ | n^.value&is Type._Bot -> Polymorphic
-        Nothing -> Monomorphic
-        Just m -> m
-      (bf, i) <- n^!binding.contents.tupled.second (act $ \ case
-        Type.Scheme s -> s^!int
-        Type.Type v_t -> v_t^!contents.int)
-      morphisms.at i ?<>= (bf, m)^.morphism
-      return m
-#endif
-
-instance (Effective (UnifierT var m) r f, MonadUnionFind var m)
-      => HasMorphism f (Scheme.Node var) where
-#ifndef HLINT
-  morphism = act $ \ n -> use (morphisms.at (n^.int)) >>= \ case
-    Just m -> return m
-    Nothing -> do
-      perform_ (type'.contents.morphism) n
-      m <- morphisms.at (n^.int) <%?= \ case
-        Nothing -> Monomorphic
-        Just m -> m
-      n^!?binding.contents.Scheme._Binder._1.int >>= \ case
-        Nothing -> return ()
-        Just i -> morphisms.at i ?<>= m
-      return m
-#endif
-
-instance (Contravariant f, Functor f)
-      => HasMorphism f (BindingFlag, Morphism) where
-#ifndef HLINT
-  morphism = to $ \ case
-    (_, Monomorphic) -> Monomorphic
-    (Rigid, _) -> Inert
-    (Flexible, m) -> m
-#endif
-
-newtype UnifierT f m a =
-  UnifierT { unUnifierT :: StateT (Merged f,
-                                   Grafted f,
-                                   Colors,
-                                   Morphisms) m a
-           }
-
-execUnifierT :: Monad m => UnifierT f m a -> m (Merged f, Grafted f, Permissions)
-execUnifierT m = do
-  s <- execStateT (unUnifierT m) mempty
-  return (s^.merged, s^.grafted, permissions (s^.colors) (s^.morphisms))
-
-instance Functor m => Functor (UnifierT f m) where
-  fmap f = UnifierT . fmap f . unUnifierT
-
-instance (Functor m, Monad m) => Applicative (UnifierT f m) where
-  pure = UnifierT . pure
-  f <*> a = UnifierT $ unUnifierT f <*> unUnifierT a
-
-instance Monad m => Monad (UnifierT f m) where
-  return = UnifierT . return
-  m >>= f = UnifierT $ unUnifierT m >>= unUnifierT . f
-  fail = UnifierT . fail
-
-instance MonadTrans (UnifierT f) where
-  lift = UnifierT . lift
-
-instance Monad m => MonadState (Merged f,
-                                Grafted f,
-                                Colors,
-                                Morphisms) (UnifierT f m) where
-  state = UnifierT . state
-  get = UnifierT get
-  put = UnifierT . put
-
-instance MonadSupply s m => MonadSupply s (UnifierT f m)
-instance MonadUnionFind f m => MonadUnionFind f (UnifierT f m)
-
-type RebinderT f m = ReaderT (Merged f,
-                              VirtualBinders f,
-                              Permissions) (StateT (Paths f) m)
-
-runRebinderT :: RebinderT f m a
-             -> Merged f
-             -> VirtualBinders f
-             -> Permissions
-             -> m a
-runRebinderT m ms vbs ps = evalStateT (runReaderT m ms vbs ps) mempty
-
-type CheckerT = ReaderT (f (Type.Node f), f (Type.Node f), Ancestors)
-
-type Ancestors = IntMap IntSet
-
-runCheckerT :: CheckerT m a -> m a
-runCheckerT m v_x v_y = do
-  as <- runStateT (fix $ \ rec v -> do
-    )
-  runReaderT m (v_x, v_y, as)
-
-cloneType :: f (Type.Node f) -> m (f (Type.Node f))
-cloneType = evalStateT (fix $ \ rec v -> do
-  n <- v^!contents
-  let i = n^.int
-  use (types.contains i) >>= \ case
-    Just v' -> return v'
-    Nothing -> do
-      v' <- new n
-      types.at i ?= v'
-      v_b' <- new =<< n^!binding.contents
-      t' <- traverse rec $ n^.value
-      v_k' <- cloneKind $ n^.kind
-      write v' $ Type.Node i v_b' t' v_k'
-      return v') mempty
-  where
-    cloneKind v = do
-      n <- v^!contents
-      let i = n^.int
-      use (kinds.contains i) >>= \ case
-        Just v' -> return v'
-        Nothing -> do
-          v' <- new n
-          kinds.at i ?= v'
-          v_b' <- new =<< n^!binding.contents
-          t' <- traverse rec $ n^.value
-          v_k' <- cloneKind $ n^.kind
-          write v' $ Kind.Node i v_b' t' v_k'
-          return v'
+data Two a = Two a a deriving (Functor, Foldable, Traversable)
 
 infix 4 <%?=, ?<>=
 
