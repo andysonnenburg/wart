@@ -3,7 +3,6 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC
     -fno-warn-missing-signatures
@@ -12,7 +11,7 @@
     -fno-warn-unused-matches #-}
 module Language.Wart.Lex (lex) where
 
-import Control.Category
+import Control.Category ((>>>))
 import Control.Lens
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
@@ -27,7 +26,7 @@ import Language.Wart.Parser
 import Language.Wart.Pos
 import Language.Wart.Token
 import Prelude (Either (..), Integral (..), Maybe (..), Num (..), Ord (..),
-                ($), (&&), (||),
+                ($), (.), (&&), (||),
                 fromIntegral, undefined)
 }
 
@@ -101,6 +100,9 @@ alexGetByte = \ case
   ParserState pos xs -> case ByteString.uncons xs of
     Nothing -> Nothing
     Just (x, ys) -> Just (x, ParserState (plusPos (w2c x) pos) ys)
+
+alexInputPrevChar :: AlexInput -> Char
+alexInputPrevChar = undefined
 
 plusPos :: Char -> Pos -> Pos
 plusPos = \ case

@@ -11,6 +11,7 @@ module Control.Monad.Supply.Class
 import Control.Applicative
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import qualified Control.Monad.Trans.State.Strict as Strict
 import Control.Monad.Trans.Supply (SupplyT)
 import qualified Control.Monad.Trans.Supply as Trans
 
@@ -26,3 +27,4 @@ instance (Applicative m, Monad m) => MonadSupply s (SupplyT s m) where
   supply = Trans.supply
 
 instance MonadSupply s m => MonadSupply s (ReaderT r m)
+instance MonadSupply s m => MonadSupply s (Strict.StateT s' m)

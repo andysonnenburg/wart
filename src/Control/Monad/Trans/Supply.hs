@@ -7,6 +7,7 @@ module Control.Monad.Trans.Supply
        ) where
 
 import Control.Applicative
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import Data.Functor.Identity
 import Data.Stream
@@ -29,6 +30,9 @@ instance Monad m => Monad (SupplyT s m) where
   return = SupplyT . return
   m >>= f = SupplyT $ unSupplyT m >>= unSupplyT . f
   fail = SupplyT . fail
+
+instance MonadTrans (SupplyT s) where
+  lift = SupplyT . lift
 
 runSupplyT :: Monad m => SupplyT s m a -> Stream s -> m a
 runSupplyT = evalStateT . unSupplyT
