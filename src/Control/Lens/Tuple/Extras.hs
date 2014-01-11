@@ -1,10 +1,17 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Control.Lens.Tuple.Extras
-       ( duplicated
+       ( Tuple (..)
+       , toTuple
+       , fromTuple
+       , duplicated
        , First (..)
        , first
        , Second (..)
@@ -15,9 +22,27 @@ import Control.Applicative
 import qualified Control.Arrow as Arrow
 import Control.Lens
 import Control.Lens.Internal.Action
+import Control.Lens.Tuple.Internal
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend, mempty)
 import qualified Data.Monoid as Monoid
+import GHC.Generics (Generic, Rep)
+
+class Tuple s a | s -> a where
+  tupled :: Iso' s a
+
+#ifndef HLINT
+  default tupled :: (Generic s, GIsHList (Rep s), IsHList a,
+                     GCons (Rep s) '[] ~ List a)
+                 => Iso' s a
+  tupled = iso (fromHList . toHListDefault) (fromHListDefault . toHList)
+#endif
+
+toTuple :: Tuple s a => s -> a
+toTuple = view tupled
+
+fromTuple :: Tuple s a => a -> s
+fromTuple = review tupled
 
 duplicated :: Getter a (a, a)
 duplicated = to $ \ a -> (a, a)
@@ -26,8 +51,8 @@ first :: Functor f
       => LensLike (First c f) s t a b
       -> LensLike f (s, c) (t, c) (a, c) (b, c)
 {-# INLINE first #-}
-first l f (a, c) = getFirst (l (\ b ->
-  First $ f (b, c)&mapped._2 %~ (_Wrapped._Just#)) a)
+first l f (a, c) =
+  getFirst (l (\ b -> First $ f (b, c)&mapped._2 %~ (_Wrapped._Just#)) a)
   &mapped._2 %~ fromMaybe c . view _Wrapped
 
 newtype First c f a = First { getFirst :: f (a, Monoid.First c) }
@@ -60,8 +85,8 @@ second :: Functor f
        => LensLike (Second c f) s t a b
        -> LensLike f (c, s) (c, t) (c, a) (c, b)
 {-# INLINE second #-}
-second l f (c, a) = getSecond (l (\ b ->
-  Second $ f (c, b)&mapped._1 %~ (_Wrapped._Just#)) a)
+second l f (c, a) =
+  getSecond (l (\ b -> Second $ f (c, b)&mapped._1 %~ (_Wrapped._Just#)) a)
   &mapped._1 %~ fromMaybe c . view _Wrapped
 
 newtype Second c f a = Second { getSecond :: f (Monoid.First c, a) }

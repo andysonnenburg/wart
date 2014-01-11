@@ -19,8 +19,10 @@ module Language.Wart.Type.Graphic
        ) where
 
 import Control.Applicative (Applicative, (<$>), (<*>))
+import qualified Control.Applicative as Applicative
+import Control.Lens (Choice, Effective, Lens', _1, _2, act, view)
 #ifndef HLINT
-import Control.Lens (Choice, Lens', (%~), (#), _1, _2, view)
+import Control.Lens.Operators
 #endif
 import qualified Control.Lens.Tuple.Generics as Tuple
 import Control.Monad.Reader
@@ -45,7 +47,7 @@ data instance Node Type v =
   (v BindingFlag)
   (v (Binder Type v))
   (v (Node Kind v)) deriving Generic
-instance HasLabel (Node Type)
+instance Functor f => HasLabel f (Node Type v)
 instance HasTerm (Node Type)
 instance Functor f => HasBindingFlag (->) f (Node Type v) (v BindingFlag)
 instance Functor f => HasBinder (->) f (Node Type v) (v (Binder Type v))
@@ -55,6 +57,13 @@ data instance Binder Type v
   | Type (v (Node Type v)) deriving Generic
 instance (Choice p, Applicative f) => AsScheme p f (Binder Type)
 instance AsType (Binder Type)
+
+instance (Effective m r f, MonadUnionFind v m,
+          HasLabel (Applicative.Const Int) (Node Scheme v))
+      => HasLabel f (Binder Type v) where
+  label = act $ \ case
+    Scheme s -> return $ s^.label
+    Type v_t -> v_t^!contents.label
 
 kind :: Lens' (Node Type v) (v (Node Kind v))
 kind = Tuple.ix (Proxy :: Proxy N4)

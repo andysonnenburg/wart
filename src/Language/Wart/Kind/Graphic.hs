@@ -1,7 +1,9 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Wart.Kind.Graphic
@@ -14,6 +16,7 @@ module Language.Wart.Kind.Graphic
 
 import Control.Applicative
 import Control.Lens
+import Control.Lens.Internal.Action
 import Control.Monad.Reader
 import Control.Monad.Supply
 import Control.Monad.UnionFind
@@ -31,7 +34,7 @@ data instance Node Kind v =
   (Kind (v (Node Kind v)))
   (v BindingFlag)
   (v (Binder Kind v)) deriving Generic
-instance HasLabel (Node Kind)
+instance Functor f => HasLabel f (Node Kind v)
 instance HasTerm (Node Kind)
 instance Functor f => HasBindingFlag (->) f (Node Kind v) (v BindingFlag)
 instance Functor f => HasBinder (->) f (Node Kind v) (v (Binder Kind v))
@@ -43,6 +46,15 @@ data instance Binder Kind v
 instance (Choice p, Applicative f) => AsScheme p f (Binder Kind)
 instance AsType (Binder Kind)
 instance AsKind (Binder Kind)
+
+instance (Effective m r f, MonadUnionFind v m,
+          HasLabel (Const Int) (Node Scheme v),
+          HasLabel (Effect m Int) (Node Type v))
+      => HasLabel f (Binder Kind v) where
+  label = act $ \ case
+    Scheme s -> return $ s^.label
+    Type v_t -> v_t^!contents.label
+    Kind v_k -> v_k^!contents.label
 
 bot :: (MonadSupply Int m, MonadUnionFind v m)
     => ReaderT (BindingFlag, Binder Kind v) m (v (Node Kind v))

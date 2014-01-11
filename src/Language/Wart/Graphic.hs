@@ -30,11 +30,11 @@ import Type.Nat
 data family Node (c :: * -> *) :: (* -> *) -> *
 data family Binder (c :: * -> *) :: (* -> *) -> *
 
-class HasLabel s where
-  label :: Node c ~ s => Lens' (s v) Int
+class Functor f => HasLabel f s where
+  label :: LensLike' f s Int
 
 #ifndef HLINT
-  default label :: (Node c ~ s, Tuple.Ixed' N0 (s v) Int) => Lens' (s v) Int
+  default label :: Tuple.Ixed' N0 s Int => LensLike' f s Int
   label = Tuple.ix (Proxy :: Proxy N0)
 #endif
 

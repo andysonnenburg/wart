@@ -28,7 +28,7 @@ data instance Node Scheme v =
   {-# UNPACK #-} !Int
   (Maybe (Binder Scheme v))
   (v (Node Type v)) deriving Generic
-instance HasLabel (Node Scheme)
+instance Functor f => HasLabel f (Node Scheme v)
 
 instance (Applicative f, Contravariant f)
       => HasBindingFlag (->) f (Node Scheme v) BindingFlag where
@@ -40,6 +40,9 @@ instance Applicative f => HasBinder (->) f (Node Scheme v) (Binder Scheme v) whe
 newtype instance Binder Scheme v = Scheme (Node Scheme v) deriving Generic
 instance (Profunctor p, Functor f) => AsScheme p f (Binder Scheme) where
   _Scheme = from Iso.wrapped
+
+instance Functor f => HasLabel f (Binder Scheme v) where
+  label = _Scheme.label
 
 type' :: Lens' (Node Scheme v) (v (Node Type v))
 type' = Tuple.ix (Proxy :: Proxy N2)

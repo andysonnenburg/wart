@@ -75,6 +75,7 @@ library
     Control.Lens.Iso.Generics
     Control.Lens.Tuple.Extras
     Control.Lens.Tuple.Generics
+    Control.Lens.Tuple.Internal
     Control.Lens.Union
     Control.Lens.Union.Generics
     Control.Monad.Extras

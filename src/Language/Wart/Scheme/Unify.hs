@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -24,6 +25,7 @@ import qualified Control.Lens.Iso.Generics as Iso
 import Control.Lens.Switch
 import Control.Lens.Tuple.Extras
 import qualified Control.Lens.Tuple.Generics as Tuple
+import Control.Monad.Extras
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Control.Monad.Supply
@@ -38,6 +40,7 @@ import Data.LCA.Online (Path)
 import Data.Maybe (fromMaybe)
 import Data.Proxy
 import Data.Semigroup (Semigroup ((<>)), mempty)
+import Data.Traversable (for)
 import GHC.Generics (Generic)
 import Language.Wart.BindingFlag
 import Language.Wart.Graphic
@@ -130,13 +133,15 @@ unify v_x v_y = do
   runCheckerT (do
     for_ (s^.graftedBots)
       checkGraft
-    forOf_ (folded.folded) (s^.mergedTypeBinders) $ \ (i, b, v_b) ->
-      checkTypeRaise i b v_b
-    forOf_ (folded.folded) (s^.mergedKindBinders) $ \ (i, b, v_b) ->
-      checkKindRaise i b v_b
-    forOf_ (folded.folded) (s^.mergedBindingFlags) $ \ (i, bf, v_bf) ->
-      checkWeaken i bf v_bf
-    checkMerges $ s^.mergedBindingFlags&mapped.mapped %~ view _1)
+    forOf_ (folded.folded) (s^.mergedTypeBinders) $ \ (MergedBinder i b v_b) ->
+      checkRaise i b =<< v_b^!contents
+    forOf_ (folded.folded) (s^.mergedKindBinders) $ \ (MergedBinder i b v_b) ->
+      checkRaise i b =<< v_b^!contents
+    forOf_ (folded.folded) (s^.mergedBindingFlags) $ \ (MergedBindingFlag i bf v_bf) ->
+      checkWeaken i bf =<< v_bf^!contents
+    checkMerges $
+      for (s^.mergedTypeBinders) (perform (_3.contents.label)) <>
+      for (s^.mergedKindBinders) (perform (_3.contents.label)))
     v_x0
     v_y0
     (s^.permissions)
@@ -219,65 +224,46 @@ checkGraft i = view (permissions.at i) >>= \ case
 #endif
 
 #ifndef HLINT
-checkTypeRaise :: Unify v m
-               => Int
-               -> Binder Type v
-               -> v (Binder Type v)
-               -> CheckerT v m ()
-checkTypeRaise i b v_b = view (permissions.at i) >>= \ case
+checkRaise :: (Unify v m,
+               HasLabel (Effect (IdT (ReaderT (CheckerEnv v) m)) Int) (Binder c v))
+           => Int
+           -> Binder c v
+           -> Binder c v
+           -> CheckerT v m ()
+checkRaise i b b' = view (permissions.at i) >>= \ case
   Just R -> do
-    b' <- v_b^!contents
-    switch (b, b')
-      $ case' (first (_Scheme.label).second (_Scheme.label)).:
-      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError' i)
-      $ caseM (first (_Type.contents.label).second (_Type.contents.label)).:
-      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError' i)
-      $ default' $ throwRaiseError' i
+    i_b <- b^!label
+    i_b' <- b'^!label
+    when (i_b /= i_b') $ join $ throwRaiseError i <$> view _1 <*> view _2
   _ -> return ()
 #endif
-
-#ifndef HLINT
-checkKindRaise :: Unify v m
-               => Int
-               -> Binder Kind v
-               -> v (Binder Kind v)
-               -> CheckerT v m ()
-checkKindRaise i b v_b = view (permissions.at i) >>= \ case
-  Just R -> do
-    b' <- v_b^!contents
-    switch (b, b')
-      $ case' (first (_Scheme.label).second (_Scheme.label)).:
-      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError' i)
-      $ caseM (first (_Type.contents.label).second (_Type.contents.label)).:
-      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError' i)
-      $ caseM (first (_Kind.contents.label).second (_Kind.contents.label)).:
-      (\ (i_b, i_b') -> when (i_b /= i_b') $ throwRaiseError' i)
-      $ default' $ throwRaiseError' i
-  _ -> return ()
-#endif
-
-throwRaiseError' :: (Field1 s s (v (Node Type v)) (v (Node Type v)),
-                     Field2 s s (v (Node Type v)) (v (Node Type v)),
-                     MonadReader s m,
-                     Unify v m)
-                 => Int -> m a
-throwRaiseError' i = join $ throwRaiseError i <$> view _1 <*> view _2
 
 #ifndef HLINT
 checkWeaken :: Unify v m
             => Int
             -> BindingFlag
-            -> v BindingFlag
+            -> BindingFlag
             -> CheckerT v m ()
-checkWeaken i bf v_bf = view (permissions.at i) >>= \ case
-  Just R -> do
-    bf' <- v_bf^!contents
-    when (bf /= bf') $ join $ throwWeakenError i <$> view _1 <*> view _2
+checkWeaken i bf bf' = view (permissions.at i) >>= \ case
+  Just R -> when (bf /= bf') $ join $ throwWeakenError i <$> view _1 <*> view _2
   _ -> return ()
 #endif
 
-checkMerges :: IntMap (Bag Int) -> CheckerT v m ()
-checkMerges = undefined
+checkMerges :: Unify v m => IntMap Binding -> CheckerT v m ()
+checkMerges bindings = do
+  v_x0 <- view _1
+  v_y0 <- view _2
+  ps <- view permissions
+  runReaderT (evalStateT (for_ (Two v_x0 v_y0) $ fix $ \ rec v0 -> do
+    n0 <- v0^!contents
+    let i0 = n0^.label
+    whenJust (bindings^.at i0) $ \ (Binding i i') -> do
+      i0' <- fromMaybe i' <$> view (at i')
+      use (at (i, i0')) >>= \ case
+        Nothing -> at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
+        Just (Just i0) -> throwMergeError i v_x0 v_y0
+        Just Nothing -> when (ps!i0 == R) $ at (i, i0') ?= Just i0
+      local (at i ?~ i0) $ for_ (n0^.term) rec) mempty) mempty
 
 newtype IdT m a = IdT { runIdT :: m a }
 
@@ -321,6 +307,8 @@ instance Unify v m => Kind.Unify v (UnifierT v m) where
 
 data UnifierState v =
   UnifierState
+  (MergedTypes v)
+  (MergedKinds v)
   (MergedBindingFlags v)
   (MergedTypeBinders v)
   (MergedKindBinders v)
@@ -332,30 +320,59 @@ data UnifierState v =
 instance (Functor f, Contravariant f) => HasPermission f (UnifierState v) where
   permissions = undefined
 
-type MergedBindingFlags v = IntMap (Bag (Int, BindingFlag, v BindingFlag))
-type MergedTypeBinders v = IntMap (Bag (Int, Binder Type v, v (Binder Type v)))
-type MergedKindBinders v = IntMap (Bag (Int, Binder Kind v, v (Binder Kind v)))
+type MergedTypes v = IntMap (v (Binder Type v))
+type MergedKinds v = IntMap (v (Binder Kind v))
+type MergedBindingFlags v = IntMap (Bag (MergedBindingFlag v))
+type MergedTypeBinders v = IntMap (Bag (MergedBinder Type v))
+type MergedKindBinders v = IntMap (Bag (MergedBinder Kind v))
 type GraftedNonBots = IntSet
 type GraftedBots = [Int]
 
+data MergedBindingFlag v =
+  MergedBindingFlag
+  {-# UNPACK #-} !Int
+  !BindingFlag
+  (v BindingFlag)
+
+data MergedBinder c v =
+  MergedBinder
+  {-# UNPACK #-} !Int
+  (Binder c v)
+  (v (Binder c v))
+
+mergedTypes :: Lens' (UnifierState v) (MergedTypes v)
+mergedTypes = Tuple.ix (Proxy :: Proxy N0)
+
+mergedKinds :: Lens' (UnifierState v) (MergedKinds v)
+mergedKinds = Tuple.ix (Proxy :: Proxy N1)
+
 mergedBindingFlags :: Lens' (UnifierState v) (MergedBindingFlags v)
-mergedBindingFlags = Tuple.ix (Proxy :: Proxy N0)
+mergedBindingFlags = Tuple.ix (Proxy :: Proxy N2)
 
 mergedTypeBinders :: Lens' (UnifierState v) (MergedTypeBinders v)
-mergedTypeBinders = Tuple.ix (Proxy :: Proxy N1)
+mergedTypeBinders = Tuple.ix (Proxy :: Proxy N3)
 
 mergedKindBinders :: Lens' (UnifierState v) (MergedKindBinders v)
-mergedKindBinders = Tuple.ix (Proxy :: Proxy N2)
+mergedKindBinders = Tuple.ix (Proxy :: Proxy N4)
 
 graftedNonBots :: Lens' (UnifierState v) GraftedNonBots
-graftedNonBots = Tuple.ix (Proxy :: Proxy N3)
+graftedNonBots = Tuple.ix (Proxy :: Proxy N5)
 
 graftedBots :: Lens' (UnifierState v) GraftedBots
-graftedBots = Tuple.ix (Proxy :: Proxy N4)
+graftedBots = Tuple.ix (Proxy :: Proxy N6)
 
 execUnifierT :: Monad m => UnifierT v m a -> m (UnifierState v)
 execUnifierT =
-  flip execStateT (UnifierState mempty mempty mempty mempty mempty mempty mempty) .
+  flip execStateT (UnifierState
+                   mempty
+                   mempty
+                   mempty
+                   mempty
+                   mempty
+                   mempty
+                   mempty
+                   mempty
+                   mempty) .
   runIdT
 
 type RebinderT c v m = IdT (StateT (RebinderState c v) m)
@@ -394,6 +411,8 @@ runCheckerT :: CheckerT v m a
             -> m a
 runCheckerT m v_x v_y ps = runReaderT (runIdT m) (CheckerEnv v_x v_y ps)
 
+data Binding = Binding {-# UNPACK #-} !Int {-# UNPACK #-} !Int
+
 type Permissions = IntMap Permission
 
 class Functor f => HasPermission f s where
@@ -402,7 +421,7 @@ class Functor f => HasPermission f s where
 type VirtualBinders v =
   (IntMap (Bag (Binder Type v)), IntMap (Bag (Binder Kind v)))
 
-data Permission = M | I | G | O | R
+data Permission = M | I | G | O | R deriving Eq
 
 type Colors = IntMap Color
 
@@ -429,7 +448,8 @@ for2_ xs f = flip evalStateT Nothing $ for_ xs $ \ x -> get >>= \ case
   Nothing -> return ()
 #endif
 
-data Two a = Two a a deriving (Functor, Foldable, Traversable)
+data Two a = Two a a deriving (Functor, Foldable, Traversable, Generic)
+instance Tuple (Two a) (a, a)
 
 infix 4 <%?=, ?<>=
 
