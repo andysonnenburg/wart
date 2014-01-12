@@ -14,6 +14,7 @@ module Control.Lens.Tuple.Internal
        , toHListDefault
        , fromHListDefault
        , GIsHList (..)
+       , GList
        , gtoHList
        , gfromHList
        ) where
@@ -34,11 +35,11 @@ class IsHList a where
   fromHList :: HList (List a) -> a
 
 #ifndef HLINT
-  type List a = GCons (Rep a) '[]
-  default toHList :: (Generic a, GIsHList (Rep a)) => a -> HList (GCons (Rep a) '[])
+  type List a = GList (Rep a)
+  default toHList :: (Generic a, GIsHList (Rep a)) => a -> HList (GList (Rep a))
   {-# INLINE toHList #-}
   toHList = toHListDefault
-  default fromHList :: (Generic a, GIsHList (Rep a)) => HList (GCons (Rep a) '[]) -> a
+  default fromHList :: (Generic a, GIsHList (Rep a)) => HList (GList (Rep a)) -> a
   {-# INLINE fromHList #-}
   fromHList = fromHListDefault
 #endif
@@ -52,13 +53,13 @@ instance IsHList (a, b, c, d, e, f)
 instance IsHList (a, b, c, d, e, f, g)
 
 #ifndef HLINT
-toHListDefault :: (Generic a, GIsHList (Rep a)) => a -> HList (GCons (Rep a) '[])
+toHListDefault :: (Generic a, GIsHList (Rep a)) => a -> HList (GList (Rep a))
 {-# INLINE toHListDefault #-}
 toHListDefault = gtoHList . from
 #endif
 
 #ifndef HLINT
-fromHListDefault :: (Generic a, GIsHList (Rep a)) => HList (GCons (Rep a) '[]) -> a
+fromHListDefault :: (Generic a, GIsHList (Rep a)) => HList (GList (Rep a)) -> a
 {-# INLINE fromHListDefault #-}
 fromHListDefault = to . gfromHList
 #endif
@@ -68,11 +69,13 @@ class GIsHList a where
   gcons :: a x -> HList xs -> HList (GCons a xs)
   guncons :: (a x -> HList xs -> r) -> HList (GCons a xs) -> r
 
-gtoHList :: GIsHList a => a x -> HList (GCons a '[])
+type GList a = GCons a '[]
+
+gtoHList :: GIsHList a => a x -> HList (GList a)
 {-# INLINE gtoHList #-}
 gtoHList = flip gcons U
 
-gfromHList :: GIsHList a => HList (GCons a '[]) -> a x
+gfromHList :: GIsHList a => HList (GList a) -> a x
 {-# INLINE gfromHList #-}
 gfromHList = guncons $ flip $ \ U -> id
 

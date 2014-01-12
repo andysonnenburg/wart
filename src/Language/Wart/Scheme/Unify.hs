@@ -32,10 +32,12 @@ import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Bag (Bag)
 import qualified Data.Bag as Bag
-import Data.Foldable (Foldable, for_)
+import Data.Foldable (Foldable, for_, traverse_)
+import qualified Data.HashMap.Strict as HashMap
 import Data.IntMap.Strict (IntMap, (!))
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
 import Data.LCA.Online (Path)
 import Data.Maybe (fromMaybe)
 import Data.Proxy
@@ -56,6 +58,8 @@ class (MonadSupply Int m, MonadUnionFind v m) => Unify v m | m -> v where
   throwKindError :: Kind (v (Node Kind v)) -> Kind (v (Node Kind v)) -> m a
   throwTypeError :: Type (v (Node Type v)) -> Type (v (Node Type v)) -> m a
   throwRowError :: Label -> Type (v (Node Type v)) -> m a
+  throwCyclicTypeError :: v (Node Type v) -> m a
+  throwCyclicKindError :: v (Node Kind v) -> m a
   throwGraftError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
   throwRaiseError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
   throwWeakenError :: Int -> v (Node Type v) -> v (Node Type v) -> m a
@@ -77,6 +81,18 @@ class (MonadSupply Int m, MonadUnionFind v m) => Unify v m | m -> v where
   default throwRowError :: (MonadTrans t, Unify v m)
                         => Label -> Type (v (Node Type v)) -> t m a
   throwRowError l c = lift $ throwRowError l c
+#endif
+
+#ifndef HLINT
+  default throwCyclicTypeError :: (MonadTrans t, Unify v m)
+                               => v (Node Type v) -> t m a
+  throwCyclicTypeError v_t = lift $ throwCyclicTypeError v_t
+#endif
+
+#ifndef HLINT
+  default throwCyclicKindError :: (MonadTrans t, Unify v m)
+                               => v (Node Kind v) -> t m a
+  throwCyclicKindError v_k = lift $ throwCyclicKindError v_k
 #endif
 
 #ifndef HLINT
@@ -118,30 +134,32 @@ unify v_x v_y = do
 
   (b2_t, b2_k) <- getVirtualBinders v_x (s^.graftedNonBots)
 
-  runRebinderT $
-    updateTypeBinders
+  updateBinders
     v_x
     (s^.mergedTypeBinders&mapped.mapped %~ view _3)
-    b2_t
-  
-  runRebinderT $
-    updateKindBinders
-    v_x
     (s^.mergedKindBinders&mapped.mapped %~ view _3)
+    b2_t
     b2_k
 
   runCheckerT (do
     for_ (s^.graftedBots)
       checkGraft
+
     forOf_ (folded.folded) (s^.mergedTypeBinders) $ \ (MergedBinder i b v_b) ->
-      checkRaise i b =<< v_b^!contents
+      join $ checkRaise i <$> b^!label <*> v_b^!contents.label
     forOf_ (folded.folded) (s^.mergedKindBinders) $ \ (MergedBinder i b v_b) ->
-      checkRaise i b =<< v_b^!contents
+      join $ checkRaise i <$> b^!label <*> v_b^!contents.label
+
     forOf_ (folded.folded) (s^.mergedBindingFlags) $ \ (MergedBindingFlag i bf v_bf) ->
       checkWeaken i bf =<< v_bf^!contents
-    checkMerges $
-      for (s^.mergedTypeBinders) (perform (_3.contents.label)) <>
-      for (s^.mergedKindBinders) (perform (_3.contents.label)))
+
+    checkMerges =<<
+      (<>) <$>
+      (for (s^.mergedTypes) $ \ v_t ->
+        v_t^!contents.(label &&& binder.contents.label).from tupled) <*>
+      (for (s^.mergedKinds) $ \ v_k ->
+        v_k^!contents.(label &&& binder.contents.label).from tupled))
+
     v_x0
     v_y0
     (s^.permissions)
@@ -149,9 +167,7 @@ unify v_x v_y = do
 #ifndef HLINT
 cloneTypes :: (Traversable t, MonadUnionFind v m)
            => t (v (Node Type v)) -> m (t (v (Node Type v)))
-cloneTypes =
-  flip evalStateT (IntMap.empty, IntMap.empty) .
-  traverse cloneType
+cloneTypes = runTypeCloner . traverse cloneType
   where
     cloneType = perform contents >=> \ n_t -> do
       use (_1.at (n_t^.label)) >>= \ case
@@ -164,10 +180,12 @@ cloneTypes =
             Type.Type v_t -> do
               i_t <- v_t^!contents.label
               maybe (_Type#v_t) (_Type#) <$> use (_1.at i_t)) >>= new
+          t' <- traverse cloneType (n_t^.term)
           v_k' <- cloneKind $ n_t^.kind
           v_t' <- new $ n_t
             &bindingFlag .~ v_bf'
             &binder .~ v_b'
+            &term .~ t'
             &kind .~ v_k'
           _1.at (n_t^.label) <?= v_t'
     cloneKind = perform contents >=> \ n_k -> do
@@ -184,17 +202,71 @@ cloneTypes =
             Kind.Kind v_k -> do
               i_k <- v_k^!contents.label
               maybe (_Kind#v_k) (_Kind#) <$> use (_2.at i_k)) >>= new
+          k' <- traverse cloneKind (n_k^.term)
           v_k' <- new $ n_k
             &bindingFlag .~ v_bf'
             &binder .~ v_b'
+            &term .~ k'
           _2.at (n_k^.label) <?= v_k'
+    runTypeCloner = flip evalStateT (IntMap.empty, IntMap.empty)
 #endif
 
-getVirtualBinders :: v (Node Type v) -> IntSet -> m (VirtualBinders v)
-getVirtualBinders = undefined
+getVirtualBinders :: MonadUnionFind v m
+                  => v (Node Type v) -> IntSet -> m (VirtualBinders v)
+getVirtualBinders = execVirtualBinderT . putVirtualTypeBinders
+  where
+    putVirtualTypeBinders v_t = do
+      n_t <- v_t^!contents
+      let i_t = n_t^.label
+      unlessM (use $ _1.contains i_t) $
+        whenM (view $ contains i_t) $ do
+          for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
+          putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
+      for_ (n_t^.term) putVirtualTypeBinders
+      putVirtualKindBinders $ n_t^.kind
+    putVirtualKindBinders v_k = do
+      n_k <- v_k^!contents
+      let i_k = n_k^.label
+      unlessM (use $ _2.contains i_k) $
+        whenM (view $ contains i_k) $
+          for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
+      for_ (n_k^.term) putVirtualKindBinders
+    putPartiallyGraftedType b v_t = do
+      n_t <- v_t^!contents
+      let i_t = n_t^.label
+      _1.at i_t %= Just . maybe (Bag.singleton b) (Bag.insert b)
+      for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
+      putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
+    putPartiallyGraftedKind b v_k = do
+      n_k <- v_k^!contents
+      let i_k = n_k^.label
+      _2.at i_k %= Just . maybe (Bag.singleton b) (Bag.insert b)
+      for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
+    execVirtualBinderT m = runReaderT (execStateT m (IntMap.empty, IntMap.empty))
 
-checkCycles :: MonadUnionFind v m => v (Node Type v) -> m ()
-checkCycles = undefined
+checkCycles :: Unify v m => v (Node Type v) -> m ()
+checkCycles = runCycleCheckerT . checkTypeCycles
+  where
+    checkTypeCycles v_t = do
+      n_t <- v_t^!contents
+      let i_t = n_t^.label
+      use (at i_t) >>= \ case
+        Nothing -> do
+          at i_t ?= True
+          traverse_ checkTypeCycles (n_t^.term)
+          at i_t ?= False
+          checkKindCycles $ n_t^.kind
+        Just True -> throwCyclicTypeError v_t
+        Just False -> return ()
+    checkKindCycles v_k = do
+      n_k <- v_k^!contents
+      let i_k = n_k^.label
+      use (at i_k) >>= \ case
+        Nothing -> do
+          at i_k ?= True
+          traverse_ checkKindCycles (n_k^.term)
+          at i_k ?= False
+    runCycleCheckerT = flip evalStateT IntMap.empty
 
 updateBindingFlags :: MonadUnionFind v m
                    => Foldable t => t (v BindingFlag) -> m ()
@@ -204,17 +276,13 @@ updateBindingFlags v_bfs = for2_ v_bfs $ \ v_bf_x v_bf_y -> do
   union v_bf_x v_bf_y
   write v_bf_x $! max bf_x bf_y
 
-updateTypeBinders :: v (Node Type v)
-                  -> IntMap (Bag (v (Binder Type v)))
-                  -> IntMap (Bag (Binder Type v))
-                  -> RebinderT Type v m ()
-updateTypeBinders = undefined
-
-updateKindBinders :: v (Node Type v)
-                  -> IntMap (Bag (v (Binder Kind v)))
-                  -> IntMap (Bag (Binder Kind v))
-                  -> RebinderT Kind v m ()
-updateKindBinders = undefined
+updateBinders :: v (Node Type v)
+              -> IntMap (Bag (v (Binder Type v)))
+              -> IntMap (Bag (v (Binder Kind v)))
+              -> IntMap (Bag (Binder Type v))
+              -> IntMap (Bag (Binder Kind v))
+              -> m ()
+updateBinders = undefined
 
 #ifndef HLINT
 checkGraft :: Unify v m => Int -> CheckerT v m ()
@@ -224,17 +292,9 @@ checkGraft i = view (permissions.at i) >>= \ case
 #endif
 
 #ifndef HLINT
-checkRaise :: (Unify v m,
-               HasLabel (Effect (IdT (ReaderT (CheckerEnv v) m)) Int) (Binder c v))
-           => Int
-           -> Binder c v
-           -> Binder c v
-           -> CheckerT v m ()
-checkRaise i b b' = view (permissions.at i) >>= \ case
-  Just R -> do
-    i_b <- b^!label
-    i_b' <- b'^!label
-    when (i_b /= i_b') $ join $ throwRaiseError i <$> view _1 <*> view _2
+checkRaise :: Unify v m => Int -> Int -> Int -> CheckerT v m ()
+checkRaise i i_b i_b' = view (permissions.at i) >>= \ case
+  Just R -> when (i_b /= i_b') $ join $ throwRaiseError i <$> view _1 <*> view _2
   _ -> return ()
 #endif
 
@@ -250,20 +310,47 @@ checkWeaken i bf bf' = view (permissions.at i) >>= \ case
 #endif
 
 checkMerges :: Unify v m => IntMap Binding -> CheckerT v m ()
-checkMerges bindings = do
+checkMerges bs = do
   v_x0 <- view _1
   v_y0 <- view _2
   ps <- view permissions
-  runReaderT (evalStateT (for_ (Two v_x0 v_y0) $ fix $ \ rec v0 -> do
-    n0 <- v0^!contents
-    let i0 = n0^.label
-    whenJust (bindings^.at i0) $ \ (Binding i i') -> do
-      i0' <- fromMaybe i' <$> view (at i')
-      use (at (i, i0')) >>= \ case
-        Nothing -> at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
-        Just (Just i0) -> throwMergeError i v_x0 v_y0
-        Just Nothing -> when (ps!i0 == R) $ at (i, i0') ?= Just i0
-      local (at i ?~ i0) $ for_ (n0^.term) rec) mempty) mempty
+  runMergeCheckerT (for_ (Two v_x0 v_y0) checkTypeMerges) v_x0 v_y0 ps
+  where
+    checkTypeMerges v0 = do
+      n0 <- v0^!contents
+      let i0 = n0^.label
+      unlessM (use $ _1.contains i0) $ do
+        _1.contains i0 .= True
+        whenJust (bs^.at i0) $ \ (Binding i i') -> do
+          i0' <- fromMaybe i' <$> view (_4.at i')
+          v_x0 <- view _1
+          v_y0 <- view _2
+          ps <- view _3
+          use (_2.at (i, i0')) >>= \ case
+            Nothing -> _2.at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
+            Just (Just j0) -> throwMergeError j0 v_x0 v_y0
+            Just Nothing -> when (ps!i0 == R) $ throwMergeError i0 v_x0 v_y0
+          local (_4.at i ?~ i0) $ do
+            for_ (n0^.term) checkTypeMerges
+            checkKindMerges $ n0^.kind
+    checkKindMerges v0 = do
+      n0 <- v0^!contents
+      let i0 = n0^.label
+      unlessM (use $ _1.contains i0) $ do
+        _1.contains i0 .= True
+        whenJust (bs^.at i0) $ \ (Binding i i') -> do
+          i0' <- fromMaybe i' <$> view (_4.at i')
+          v_x0 <- view _1
+          v_y0 <- view _2
+          ps <- view _3
+          use (_2.at (i, i0')) >>= \ case
+            Nothing -> _2.at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
+            Just (Just j0) -> throwMergeError j0 v_x0 v_y0
+            Just Nothing -> when (ps!i0 == R) $ throwMergeError i0 v_x0 v_y0
+          local (_4.at i ?~ i0) $ for_ (n0^.term) checkKindMerges
+    runMergeCheckerT m v_x0 v_y0 ps =
+      flip runReaderT (v_x0, v_y0, ps, IntMap.empty) $
+      flip evalStateT (IntSet.empty, HashMap.empty) m
 
 newtype IdT m a = IdT { runIdT :: m a }
 
@@ -320,8 +407,8 @@ data UnifierState v =
 instance (Functor f, Contravariant f) => HasPermission f (UnifierState v) where
   permissions = undefined
 
-type MergedTypes v = IntMap (v (Binder Type v))
-type MergedKinds v = IntMap (v (Binder Kind v))
+type MergedTypes v = IntMap (v (Node Type v))
+type MergedKinds v = IntMap (v (Node Kind v))
 type MergedBindingFlags v = IntMap (Bag (MergedBindingFlag v))
 type MergedTypeBinders v = IntMap (Bag (MergedBinder Type v))
 type MergedKindBinders v = IntMap (Bag (MergedBinder Kind v))
@@ -332,13 +419,31 @@ data MergedBindingFlag v =
   MergedBindingFlag
   {-# UNPACK #-} !Int
   !BindingFlag
-  (v BindingFlag)
+  (v BindingFlag) deriving Generic
+instance Field1
+         (MergedBindingFlag v) (MergedBindingFlag v)
+         Int Int
+instance Field2
+         (MergedBindingFlag v) (MergedBindingFlag v)
+         BindingFlag BindingFlag
+instance Field3
+         (MergedBindingFlag v) (MergedBindingFlag v)
+         (v BindingFlag) (v BindingFlag)
 
 data MergedBinder c v =
   MergedBinder
   {-# UNPACK #-} !Int
   (Binder c v)
-  (v (Binder c v))
+  (v (Binder c v)) deriving Generic
+instance Field1
+         (MergedBinder c v) (MergedBinder c v)
+         Int Int
+instance Field2
+         (MergedBinder c v) (MergedBinder c v)
+         (Binder c v) (Binder c v)
+instance Field3
+         (MergedBinder c v) (MergedBinder c v)
+         (v (Binder c v)) (v (Binder c v))
 
 mergedTypes :: Lens' (UnifierState v) (MergedTypes v)
 mergedTypes = Tuple.ix (Proxy :: Proxy N0)
@@ -411,7 +516,8 @@ runCheckerT :: CheckerT v m a
             -> m a
 runCheckerT m v_x v_y ps = runReaderT (runIdT m) (CheckerEnv v_x v_y ps)
 
-data Binding = Binding {-# UNPACK #-} !Int {-# UNPACK #-} !Int
+data Binding = Binding {-# UNPACK #-} !Int {-# UNPACK #-} !Int deriving Generic
+instance Tuple Binding (Int, Int)
 
 type Permissions = IntMap Permission
 

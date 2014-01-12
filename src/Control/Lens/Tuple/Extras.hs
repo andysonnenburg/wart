@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -16,24 +17,28 @@ module Control.Lens.Tuple.Extras
        , first
        , Second (..)
        , second
+       , (***)
+       , (&&&)
        ) where
 
 import Control.Applicative
 import qualified Control.Arrow as Arrow
 import Control.Lens
 import Control.Lens.Internal.Action
+import Control.Lens.Internal.Getter
 import Control.Lens.Tuple.Internal
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mappend, mempty)
 import qualified Data.Monoid as Monoid
 import GHC.Generics (Generic, Rep)
 
+infixr 3 ***, &&&
+
 class Tuple s a | s -> a where
   tupled :: Iso' s a
 
 #ifndef HLINT
-  default tupled :: (Generic s, GIsHList (Rep s), IsHList a,
-                     GCons (Rep s) '[] ~ List a)
+  default tupled :: (Generic s, GIsHList (Rep s), IsHList a, GList (Rep s) ~ List a)
                  => Iso' s a
   tupled = iso (fromHList . toHListDefault) (fromHListDefault . toHList)
 #endif
@@ -114,3 +119,14 @@ instance Effective m r f => Effective m r (Second c f) where
   effective = Second . effective
   {-# INLINE ineffective #-}
   ineffective = ineffective . getSecond
+
+(***) :: LensLike (AlongsideLeft f b') s t a b
+      -> LensLike (AlongsideRight f t) s' t' a' b'
+      -> LensLike f (s, s') (t, t') (a, a') (b, b')
+(***) = alongside
+
+(&&&) :: (Functor f, Contravariant f)
+      => LensLike (AlongsideLeft f b') s s a b
+      -> LensLike (AlongsideRight f s) s s a' b'
+      -> LensLike f s s (a, a') (b, b')
+l &&& r = duplicated.alongside l r

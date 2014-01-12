@@ -58,8 +58,8 @@ instance GIxed' (GSize s :> n) n s s' t t' a b
   gix = gix' (Proxy :: Proxy (GSize s :> n))
 
 instance (GIsHList s, GIsHList t, GIsHList s', GIsHList t',
-          IsHList a, List a ~ GCons s (GCons s' '[]),
-          IsHList b, List b ~ GCons t (GCons t' '[]))
+          IsHList a, List a ~ GCons s (GList s'),
+          IsHList b, List b ~ GCons t (GList t'))
       => GIxed N0 (s :*: s') (t :*: t') a b where
   {-# INLINE gix #-}
   gix _ = iso (fromHList . gtoHList) (gfromHList . toHList)
