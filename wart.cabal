@@ -88,6 +88,7 @@ library
     Control.Monad.UnionFind.Class
     Control.Monad.UnionFind.ST
     Data.Bag
+    Data.LCA.Online.Extras
     Data.STIntRef
     Data.Stream
     GHC.Generics.Lens.Extras

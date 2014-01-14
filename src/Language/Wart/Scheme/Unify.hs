@@ -33,13 +33,13 @@ import Control.Monad.UnionFind
 import Data.Bag (Bag)
 import qualified Data.Bag as Bag
 import Data.Foldable (Foldable, foldl', for_, toList, traverse_)
-import Data.Function (on)
 import qualified Data.HashMap.Strict as HashMap
 import Data.IntMap.Strict (IntMap, (!))
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import Data.LCA.Online (Path, lca)
+import qualified Data.LCA.Online.Extras as Path
 import Data.Maybe (fromMaybe)
 import Data.Proxy
 import Data.Semigroup (Semigroup ((<>)), mempty)
@@ -235,6 +235,8 @@ checkCycles = runCycleCheckerT . checkTypeCycles
           at i_k ?= True
           traverse_ checkKindCycles (n_k^.term)
           at i_k ?= False
+        Just True -> throwCyclicKindError v_k
+        Just False -> return ()
     runCycleCheckerT = flip evalStateT IntMap.empty
 
 updateBindingFlags :: MonadUnionFind v m
@@ -252,19 +254,19 @@ getVirtualBinders = execVirtualBinderT . putVirtualTypeBinders
     putVirtualTypeBinders v_t = do
       n_t <- v_t^!contents
       let i_t = n_t^.label
-      unlessM (use $ _1.contains i_t) $
+      unlessM (use $ _1.contains i_t) $ do
         whenM (view $ contains i_t) $ do
           for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
           putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
-      for_ (n_t^.term) putVirtualTypeBinders
-      n_t^.kind&putVirtualKindBinders
+        for_ (n_t^.term) putVirtualTypeBinders
+        n_t^.kind&putVirtualKindBinders
     putVirtualKindBinders v_k = do
       n_k <- v_k^!contents
       let i_k = n_k^.label
-      unlessM (use $ _2.contains i_k) $
+      unlessM (use $ _2.contains i_k) $ do
         whenM (view $ contains i_k) $
           for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
-      for_ (n_k^.term) putVirtualKindBinders
+        for_ (n_k^.term) putVirtualKindBinders
     putPartiallyGraftedType b v_t = do
       n_t <- v_t^!contents
       let i_t = n_t^.label
@@ -301,7 +303,7 @@ updateBinders = runBinderUpdater . updateTypeBinders
       whenJust (b1_n <> b2_n) $ \ ps -> do
         let p' = getLCA $ foldMap1 LCA ps
         putTypePath i_t p'
-        write v_b_t $ head $ toList p'
+        write v_b_t $ Path.head p'
       for_ (n_t^.term) updateTypeBinders
       n_t^.kind&updateKindBinders
     updateKindBinders v_k = do
@@ -318,7 +320,7 @@ updateBinders = runBinderUpdater . updateTypeBinders
       whenJust (b1_n <> b2_n) $ \ ps -> do
         let p' = getLCA $ foldMap1 LCA ps
         putKindPath i_k p'
-        write v_b_k $ head $ toList p'
+        write v_b_k $ Path.head p'
       for_ (n_k^.term) updateKindBinders
     getTypePath = undefined
     getKindPath = undefined
