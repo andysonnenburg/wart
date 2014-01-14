@@ -7,9 +7,10 @@ module Data.Bag
        , union
        ) where
 
-import Control.Applicative
+import Control.Applicative ((<$>), (<*>))
 import Data.Foldable (Foldable (foldMap))
 import Data.Semigroup
+import Data.Semigroup.Foldable
 import Data.Traversable (Traversable (traverse))
 
 data Bag a
@@ -31,7 +32,7 @@ union = Union
 
 instance Semigroup (Bag a) where
   {-# INLINE (<>) #-}
-  (<>) = Union
+  (<>) = union
 
 instance Functor Bag where
 #ifndef HLINT
@@ -47,6 +48,14 @@ instance Foldable Bag where
     Singleton x -> f x
     Insert x xs -> mappend (f x) (foldMap f xs)
     Union xs ys -> mappend (foldMap f xs) (foldMap f ys)
+#endif
+
+instance Foldable1 Bag where
+#ifndef HLINT
+  foldMap1 f = \ case
+    Singleton x -> f x
+    Insert x xs -> f x <> foldMap1 f xs
+    Union xs ys -> foldMap1 f xs <> foldMap1 f ys
 #endif
 
 instance Traversable Bag where

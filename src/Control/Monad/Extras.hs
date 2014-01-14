@@ -2,6 +2,7 @@ module Control.Monad.Extras
        ( whenM
        , unlessM
        , whenJust
+       , whenNothingM
        ) where
 
 import Control.Monad
@@ -17,3 +18,7 @@ unlessM p m = p >>= flip unless m
 whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
 {-# INLINE whenJust #-}
 whenJust p m = maybe (return ()) m p
+
+whenNothingM :: Monad m => m (Maybe a) -> m () -> m ()
+{-# INLINE whenNothingM #-}
+whenNothingM p m = maybe m (const $ return ()) =<< p

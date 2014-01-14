@@ -18,6 +18,8 @@ data Expr f a
   | Let a (f (Expr f a)) (f (Expr f a))
   | Var a (f (Expr f a)) (f (Expr f a))
   | f (Expr f a) `Then` f (Expr f a)
+  | Try (f (Expr f a)) [Catch f a] (Maybe (f (Expr f a)))
+  | Throw (f (Expr f a))
   | Return (f (Expr f a))
   | Void
   | Read {-# UNPACK #-} !Label
@@ -29,4 +31,7 @@ deriving instance (Show (f (Expr f a)), Show a) => Show (Expr f a)
 data Record f a
   = Empty
   | Extend {-# UNPACK #-} !Label (f (Expr f a)) !(Record f a) deriving Generic
-deriving instance (Show (f (Expr f a))) => Show (Record f a)
+deriving instance Show (f (Expr f a)) => Show (Record f a)
+
+data Catch f a = Catch {-# UNPACK #-} !Label a (f (Expr f a))
+deriving instance (Show (f (Expr f a)), Show a) => Show (Catch f a)

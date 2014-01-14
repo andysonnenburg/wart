@@ -32,16 +32,18 @@ import Control.Monad.Supply
 import Control.Monad.UnionFind
 import Data.Bag (Bag)
 import qualified Data.Bag as Bag
-import Data.Foldable (Foldable, for_, traverse_)
+import Data.Foldable (Foldable, foldl', for_, toList, traverse_)
+import Data.Function (on)
 import qualified Data.HashMap.Strict as HashMap
 import Data.IntMap.Strict (IntMap, (!))
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
-import Data.LCA.Online (Path)
+import Data.LCA.Online (Path, lca)
 import Data.Maybe (fromMaybe)
 import Data.Proxy
 import Data.Semigroup (Semigroup ((<>)), mempty)
+import Data.Semigroup.Foldable
 import Data.Traversable (for)
 import GHC.Generics (Generic)
 import Language.Wart.BindingFlag
@@ -211,39 +213,6 @@ cloneTypes = runTypeCloner . traverse cloneType
     runTypeCloner = flip evalStateT (IntMap.empty, IntMap.empty)
 #endif
 
-getVirtualBinders :: MonadUnionFind v m
-                  => v (Node Type v) -> IntSet -> m (VirtualBinders v)
-getVirtualBinders = execVirtualBinderT . putVirtualTypeBinders
-  where
-    putVirtualTypeBinders v_t = do
-      n_t <- v_t^!contents
-      let i_t = n_t^.label
-      unlessM (use $ _1.contains i_t) $
-        whenM (view $ contains i_t) $ do
-          for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
-          putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
-      for_ (n_t^.term) putVirtualTypeBinders
-      putVirtualKindBinders $ n_t^.kind
-    putVirtualKindBinders v_k = do
-      n_k <- v_k^!contents
-      let i_k = n_k^.label
-      unlessM (use $ _2.contains i_k) $
-        whenM (view $ contains i_k) $
-          for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
-      for_ (n_k^.term) putVirtualKindBinders
-    putPartiallyGraftedType b v_t = do
-      n_t <- v_t^!contents
-      let i_t = n_t^.label
-      _1.at i_t %= Just . maybe (Bag.singleton b) (Bag.insert b)
-      for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
-      putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
-    putPartiallyGraftedKind b v_k = do
-      n_k <- v_k^!contents
-      let i_k = n_k^.label
-      _2.at i_k %= Just . maybe (Bag.singleton b) (Bag.insert b)
-      for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
-    execVirtualBinderT m = runReaderT (execStateT m (IntMap.empty, IntMap.empty))
-
 checkCycles :: Unify v m => v (Node Type v) -> m ()
 checkCycles = runCycleCheckerT . checkTypeCycles
   where
@@ -276,13 +245,93 @@ updateBindingFlags v_bfs = for2_ v_bfs $ \ v_bf_x v_bf_y -> do
   union v_bf_x v_bf_y
   write v_bf_x $! max bf_x bf_y
 
-updateBinders :: v (Node Type v)
+getVirtualBinders :: MonadUnionFind v m
+                  => v (Node Type v) -> IntSet -> m (VirtualBinders v)
+getVirtualBinders = execVirtualBinderT . putVirtualTypeBinders
+  where
+    putVirtualTypeBinders v_t = do
+      n_t <- v_t^!contents
+      let i_t = n_t^.label
+      unlessM (use $ _1.contains i_t) $
+        whenM (view $ contains i_t) $ do
+          for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
+          putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
+      for_ (n_t^.term) putVirtualTypeBinders
+      n_t^.kind&putVirtualKindBinders
+    putVirtualKindBinders v_k = do
+      n_k <- v_k^!contents
+      let i_k = n_k^.label
+      unlessM (use $ _2.contains i_k) $
+        whenM (view $ contains i_k) $
+          for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
+      for_ (n_k^.term) putVirtualKindBinders
+    putPartiallyGraftedType b v_t = do
+      n_t <- v_t^!contents
+      let i_t = n_t^.label
+      whenNothingM (_1.at i_t <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $ do
+        for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
+        n_t^.kind&putPartiallyGraftedKind (_Type#v_t)
+    putPartiallyGraftedKind b v_k = do
+      n_k <- v_k^!contents
+      let i_k = n_k^.label
+      whenNothingM (_2.at i_k <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $
+        for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
+    execVirtualBinderT m = runReaderT (execStateT m (IntMap.empty, IntMap.empty))
+
+updateBinders :: MonadUnionFind v m
+              => v (Node Type v)
               -> IntMap (Bag (v (Binder Type v)))
               -> IntMap (Bag (v (Binder Kind v)))
               -> IntMap (Bag (Binder Type v))
               -> IntMap (Bag (Binder Kind v))
               -> m ()
-updateBinders = undefined
+updateBinders = runBinderUpdater . updateTypeBinders
+  where
+    updateTypeBinders v_t = do
+      n_t <- v_t^!contents
+      let (i_t, v_b_t) = n_t^.(label &&& binder)
+      b1 <- view _1
+      b1_n <- join $
+              forOf (traversed.traversed) (b1^.at i_t) <$>
+              pure (\ v_b_t' -> do
+        p <- getTypePath =<< v_b_t'^!contents
+        p <$ union v_b_t v_b_t')
+      b2 <- view _3
+      b2_n <- getTypePath $ b2^.at i_t
+      whenJust (b1_n <> b2_n) $ \ ps -> do
+        let p' = getLCA $ foldMap1 LCA ps
+        putTypePath i_t p'
+        write v_b_t $ head $ toList p'
+      for_ (n_t^.term) updateTypeBinders
+      n_t^.kind&updateKindBinders
+    updateKindBinders v_k = do
+      n_k <- v_k^!contents
+      let (i_k, v_b_k) = n_k^.(label &&& binder)
+      b1 <- view _2
+      b1_n <- join $
+              forOf (traversed.traversed) (b1^.at i_k) <$>
+              pure (\ v_b_k' -> do
+        p <- getKindPath =<< v_b_k'^!contents
+        p <$ union v_b_k v_b_k')
+      b2 <- view _4
+      b2_n <- getKindPath $ b2^.at i_k
+      whenJust (b1_n <> b2_n) $ \ ps -> do
+        let p' = getLCA $ foldMap1 LCA ps
+        putKindPath i_k p'
+        write v_b_k $ head $ toList p'
+      for_ (n_k^.term) updateKindBinders
+    getTypePath = undefined
+    getKindPath = undefined
+    putTypePath i_t p = _1.at i_t ?= p
+    putKindPath i_k p = _2.at i_k ?= p
+    runBinderUpdater m b1_t b1_k b2_t b2_k =
+      flip runReaderT (b1_t, b1_k, b2_t, b2_k) $
+      evalStateT m (IntMap.empty, IntMap.empty)
+
+newtype LCA a = LCA { getLCA :: Path a }
+
+instance Semigroup (LCA a) where
+  x <> y = LCA $ lca (getLCA x) (getLCA y)
 
 #ifndef HLINT
 checkGraft :: Unify v m => Int -> CheckerT v m ()
@@ -310,11 +359,12 @@ checkWeaken i bf bf' = view (permissions.at i) >>= \ case
 #endif
 
 checkMerges :: Unify v m => IntMap Binding -> CheckerT v m ()
-checkMerges bs = do
-  v_x0 <- view _1
-  v_y0 <- view _2
-  ps <- view permissions
-  runMergeCheckerT (for_ (Two v_x0 v_y0) checkTypeMerges) v_x0 v_y0 ps
+checkMerges bs =
+  view _1 >>= \ v_x0 ->
+  view _2 >>= \ v_y0 ->
+  join $
+  runMergeCheckerT (for_ (Two v_x0 v_y0) checkTypeMerges) v_x0 v_y0 <$>
+  view permissions
   where
     checkTypeMerges v0 = do
       n0 <- v0^!contents
@@ -332,7 +382,7 @@ checkMerges bs = do
             Just Nothing -> when (ps!i0 == R) $ throwMergeError i0 v_x0 v_y0
           local (_4.at i ?~ i0) $ do
             for_ (n0^.term) checkTypeMerges
-            checkKindMerges $ n0^.kind
+            n0^.kind&checkKindMerges
     checkKindMerges v0 = do
       n0 <- v0^!contents
       let i0 = n0^.label
@@ -350,7 +400,7 @@ checkMerges bs = do
           local (_4.at i ?~ i0) $ for_ (n0^.term) checkKindMerges
     runMergeCheckerT m v_x0 v_y0 ps =
       flip runReaderT (v_x0, v_y0, ps, IntMap.empty) $
-      flip evalStateT (IntSet.empty, HashMap.empty) m
+      evalStateT m (IntSet.empty, HashMap.empty)
 
 newtype IdT m a = IdT { runIdT :: m a }
 

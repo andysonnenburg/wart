@@ -38,6 +38,7 @@ $numeric = [0-9]
 :-
 
 $white+ ;
+"let" { lexLet }
 "var" { lexVar }
 "fn" { lexFn }
 "for" { lexFor }
@@ -58,6 +59,9 @@ lex = do
     AlexError (ParserState pos' _) -> throwLexError $ Loc pos pos'
     AlexEOF -> return $ Located (Loc pos pos) EOF
     AlexSkip s' _ -> put s' >> lex
+
+lexLet :: AlexAction
+lexLet l _ _ = return $ Located l Let
 
 lexVar :: AlexAction
 lexVar l _ _ = return $ Located l Var

@@ -43,6 +43,7 @@ library
     mtl,
     profunctors,
     semigroups,
+    semigroupoids,
     tagged,
     text,
     transformers,

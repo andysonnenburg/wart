@@ -5,7 +5,8 @@ import Data.Text (Text)
 import GHC.Generics (Generic)
 
 data Token
-  = Var
+  = Let
+  | Var
   | Fn
   | For
   | While
