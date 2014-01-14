@@ -387,11 +387,14 @@ checkMerges bs =
           i0' <- fromMaybe i' <$> view (_4.at i')
           v_x0 <- view _1
           v_y0 <- view _2
-          ps <- view _3
           use (_2.at (i, i0')) >>= \ case
-            Nothing -> _2.at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
+            Nothing -> view (_3.at i0) >>= (_2.at (i, i0') ?=) . \ case
+              Just R -> Just i0
+              _ -> Nothing
             Just (Just j0) -> throwMergeError j0 v_x0 v_y0
-            Just Nothing -> when (ps!i0 == R) $ throwMergeError i0 v_x0 v_y0
+            Just Nothing -> view (_3.at i0) >>= \ case
+              Just R -> throwMergeError i0 v_x0 v_y0
+              _ -> return ()
           local (_4.at i ?~ i0) $ do
             for_ (n0^.term) checkTypeMerges
             n0^.kind&checkKindMerges
@@ -406,9 +409,13 @@ checkMerges bs =
           v_y0 <- view _2
           ps <- view _3
           use (_2.at (i, i0')) >>= \ case
-            Nothing -> _2.at (i, i0') ?= if ps!i0 == R then Just i0 else Nothing
+            Nothing -> view (_3.at i0) >>= (_2.at (i, i0') ?=) . \ case
+              Just R -> Just i0
+              _ -> Nothing
             Just (Just j0) -> throwMergeError j0 v_x0 v_y0
-            Just Nothing -> when (ps!i0 == R) $ throwMergeError i0 v_x0 v_y0
+            Just Nothing -> view (_3.at i0) >>= \ case
+              Just R -> throwMergeError i0 v_x0 v_y0
+              _ -> return ()
           local (_4.at i ?~ i0) $ for_ (n0^.term) checkKindMerges
     runMergeCheckerT m v_x0 v_y0 ps =
       flip runReaderT (v_x0, v_y0, ps, IntMap.empty) $
