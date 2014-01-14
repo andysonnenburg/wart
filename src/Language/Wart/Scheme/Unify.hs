@@ -385,15 +385,13 @@ checkMerges bs =
         _1.contains i0 .= True
         whenJust (bs^.at i0) $ \ (MergedBinding i i') -> do
           i0' <- fromMaybe i' <$> view (_4.at i')
-          v_x0 <- view _1
-          v_y0 <- view _2
-          use (_2.at (i, i0')) >>= \ case
-            Nothing -> view (_3.at i0) >>= (_2.at (i, i0') ?=) . \ case
+          use (_2.at (MergedBinding i i0')) >>= \ case
+            Nothing -> (_2.at (MergedBinding i i0') ?=) . (\ case
               Just R -> Just i0
-              _ -> Nothing
-            Just (Just j0) -> throwMergeError j0 v_x0 v_y0
+              _ -> Nothing) =<< view (_3.at i0)
+            Just (Just j0) -> throwMergeError' j0
             Just Nothing -> view (_3.at i0) >>= \ case
-              Just R -> throwMergeError i0 v_x0 v_y0
+              Just R -> throwMergeError' i0
               _ -> return ()
           local (_4.at i ?~ i0) $ do
             for_ (n0^.term) checkTypeMerges
@@ -405,18 +403,16 @@ checkMerges bs =
         _1.contains i0 .= True
         whenJust (bs^.at i0) $ \ (MergedBinding i i') -> do
           i0' <- fromMaybe i' <$> view (_4.at i')
-          v_x0 <- view _1
-          v_y0 <- view _2
-          ps <- view _3
           use (_2.at (i, i0')) >>= \ case
-            Nothing -> view (_3.at i0) >>= (_2.at (i, i0') ?=) . \ case
+            Nothing -> (_2.at (MergedBinding i i0') ?=) . (\ case
               Just R -> Just i0
-              _ -> Nothing
-            Just (Just j0) -> throwMergeError j0 v_x0 v_y0
+              _ -> Nothing) =<< view (_3.at i0)
+            Just (Just j0) -> throwMergeError' j0
             Just Nothing -> view (_3.at i0) >>= \ case
-              Just R -> throwMergeError i0 v_x0 v_y0
+              Just R -> throwMergeError' i0
               _ -> return ()
           local (_4.at i ?~ i0) $ for_ (n0^.term) checkKindMerges
+    throwMergeError' i = join $ throwMergeError i <$> view _1 <*> view _2
     runMergeCheckerT m v_x0 v_y0 ps =
       flip runReaderT (v_x0, v_y0, ps, IntMap.empty) $
       evalStateT m (IntSet.empty, HashMap.empty)
@@ -627,7 +623,6 @@ for2_ xs f = flip evalStateT Nothing $ for_ xs $ \ x -> get >>= \ case
 #endif
 
 data Two a = Two a a deriving (Functor, Foldable, Traversable, Generic)
-instance Tuple (Two a) (a, a)
 
 infix 4 <%?=, ?<>=
 
