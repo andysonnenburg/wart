@@ -249,36 +249,46 @@ updateBindingFlags v_bfs = for2_ v_bfs $ \ v_bf_x v_bf_y -> do
 
 getVirtualBinders :: MonadUnionFind v m
                   => v (Node Type v) -> IntSet -> m (VirtualBinders v)
-getVirtualBinders = execVirtualBinderT . putVirtualTypeBinders
+getVirtualBinders = execVirtualBindersT . putVirtualTypeBinders
   where
     putVirtualTypeBinders v_t = do
       n_t <- v_t^!contents
       let i_t = n_t^.label
       unlessM (use $ _1.contains i_t) $ do
-        whenM (view $ contains i_t) $ do
-          for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
-          putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
-        for_ (n_t^.term) putVirtualTypeBinders
-        n_t^.kind&putVirtualKindBinders
+        _1.contains i_t .= True
+        view (contains i_t) >>= \ case
+          True -> do
+            for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
+            putPartiallyGraftedKind (_Type#v_t) (n_t^.kind)
+          False -> do
+            for_ (n_t^.term) putVirtualTypeBinders
+            n_t^.kind&putVirtualKindBinders
     putVirtualKindBinders v_k = do
       n_k <- v_k^!contents
       let i_k = n_k^.label
       unlessM (use $ _2.contains i_k) $ do
-        whenM (view $ contains i_k) $
-          for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
-        for_ (n_k^.term) putVirtualKindBinders
+        _2.contains i_k .= True
+        view (contains i_k) >>= \ case
+          True -> for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
+          False -> for_ (n_k^.term) putVirtualKindBinders
     putPartiallyGraftedType b v_t = do
       n_t <- v_t^!contents
       let i_t = n_t^.label
-      whenNothingM (_1.at i_t <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $ do
+      whenNothingM (_3.at i_t <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $ do
         for_ (n_t^.term) $ putPartiallyGraftedType (_Type#v_t)
         n_t^.kind&putPartiallyGraftedKind (_Type#v_t)
     putPartiallyGraftedKind b v_k = do
       n_k <- v_k^!contents
       let i_k = n_k^.label
-      whenNothingM (_2.at i_k <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $
+      whenNothingM (_4.at i_k <<%= Just . maybe (Bag.singleton b) (Bag.insert b)) $
         for_ (n_k^.term) $ putPartiallyGraftedKind (_Kind#v_k)
-    execVirtualBinderT m = runReaderT (execStateT m (IntMap.empty, IntMap.empty))
+    execVirtualBindersT m =
+      fmap (\ (_, _, b2_t, b2_k) -> (b2_t, b2_k)) .
+      runReaderT (execStateT m (IntSet.empty,
+                                IntSet.empty,
+                                IntMap.empty,
+                                IntMap.empty))
+      
 
 updateBinders :: MonadUnionFind v m
               => v (Node Type v)
@@ -360,7 +370,7 @@ checkWeaken i bf bf' = view (permissions.at i) >>= \ case
   _ -> return ()
 #endif
 
-checkMerges :: Unify v m => IntMap Binding -> CheckerT v m ()
+checkMerges :: Unify v m => IntMap MergedBinding -> CheckerT v m ()
 checkMerges bs =
   view _1 >>= \ v_x0 ->
   view _2 >>= \ v_y0 ->
@@ -373,7 +383,7 @@ checkMerges bs =
       let i0 = n0^.label
       unlessM (use $ _1.contains i0) $ do
         _1.contains i0 .= True
-        whenJust (bs^.at i0) $ \ (Binding i i') -> do
+        whenJust (bs^.at i0) $ \ (MergedBinding i i') -> do
           i0' <- fromMaybe i' <$> view (_4.at i')
           v_x0 <- view _1
           v_y0 <- view _2
@@ -390,7 +400,7 @@ checkMerges bs =
       let i0 = n0^.label
       unlessM (use $ _1.contains i0) $ do
         _1.contains i0 .= True
-        whenJust (bs^.at i0) $ \ (Binding i i') -> do
+        whenJust (bs^.at i0) $ \ (MergedBinding i i') -> do
           i0' <- fromMaybe i' <$> view (_4.at i')
           v_x0 <- view _1
           v_y0 <- view _2
@@ -568,8 +578,11 @@ runCheckerT :: CheckerT v m a
             -> m a
 runCheckerT m v_x v_y ps = runReaderT (runIdT m) (CheckerEnv v_x v_y ps)
 
-data Binding = Binding {-# UNPACK #-} !Int {-# UNPACK #-} !Int deriving Generic
-instance Tuple Binding (Int, Int)
+data MergedBinding =
+  MergedBinding
+  {-# UNPACK #-} !Int
+  {-# UNPACK #-} !Int deriving Generic
+instance Tuple MergedBinding (Int, Int)
 
 type Permissions = IntMap Permission
 
