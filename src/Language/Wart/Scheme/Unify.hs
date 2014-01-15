@@ -34,11 +34,14 @@ import Data.Bag (Bag)
 import qualified Data.Bag as Bag
 import Data.Foldable (Foldable, foldl', for_, toList, traverse_)
 import qualified Data.HashMap.Strict as HashMap
+import Data.Hashable (Hashable)
 import Data.IntMap.Strict (IntMap, (!))
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import Data.LCA.Online (Path, lca)
+import qualified Data.LCA.Online as Path
+import Data.LCA.Online.Extras (LCA (..))
 import qualified Data.LCA.Online.Extras as Path
 import Data.Maybe (fromMaybe)
 import Data.Proxy
@@ -332,18 +335,25 @@ updateBinders = runBinderUpdater . updateTypeBinders
         putKindPath i_k p'
         write v_b_k $ Path.head p'
       for_ (n_k^.term) updateKindBinders
-    getTypePath = undefined
+    getTypePath b = case b of
+      Type.Scheme s -> _1.at (s^.label) >>= \ case
+        Nothing -> case s^?binder of
+          Nothing -> do
+            let p = Path.cons b Path.empty
+            putTypePath b p
+            return p
+          Just b' -> do
+            p' <- getSchemePath b'
+            let p = Path.cons b p'
+            putTypePath b p
+            return p
+        Just p -> return p
     getKindPath = undefined
     putTypePath i_t p = _1.at i_t ?= p
     putKindPath i_k p = _2.at i_k ?= p
     runBinderUpdater m b1_t b1_k b2_t b2_k =
       flip runReaderT (b1_t, b1_k, b2_t, b2_k) $
       evalStateT m (IntMap.empty, IntMap.empty)
-
-newtype LCA a = LCA { getLCA :: Path a }
-
-instance Semigroup (LCA a) where
-  x <> y = LCA $ lca (getLCA x) (getLCA y)
 
 #ifndef HLINT
 checkGraft :: Unify v m => Int -> CheckerT v m ()
@@ -371,12 +381,10 @@ checkWeaken i bf bf' = view (permissions.at i) >>= \ case
 #endif
 
 checkMerges :: Unify v m => IntMap MergedBinding -> CheckerT v m ()
-checkMerges bs =
-  view _1 >>= \ v_x0 ->
-  view _2 >>= \ v_y0 ->
-  join $
-  runMergeCheckerT (for_ (Two v_x0 v_y0) checkTypeMerges) v_x0 v_y0 <$>
-  view permissions
+checkMerges bs = do
+  v_x0 <- view _1
+  v_y0 <- view _2
+  runMergeCheckerT $ for_ (Two v_x0 v_y0) checkTypeMerges
   where
     checkTypeMerges v0 = do
       n0 <- v0^!contents
@@ -403,19 +411,19 @@ checkMerges bs =
         _1.contains i0 .= True
         whenJust (bs^.at i0) $ \ (MergedBinding i i') -> do
           i0' <- fromMaybe i' <$> view (_4.at i')
-          use (_2.at (i, i0')) >>= \ case
+          use (_2.at (MergedBinding i i0')) >>= \ case
             Nothing -> (_2.at (MergedBinding i i0') ?=) . (\ case
               Just R -> Just i0
-              _ -> Nothing) =<< view (_3.at i0)
+              _ -> Nothing) =<< lift (view $ permissions.at i0)
             Just (Just j0) -> throwMergeError' j0
-            Just Nothing -> view (_3.at i0) >>= \ case
+            Just Nothing -> lift (view $ permissions.at i0) >>= \ case
               Just R -> throwMergeError' i0
               _ -> return ()
           local (_4.at i ?~ i0) $ for_ (n0^.term) checkKindMerges
-    throwMergeError' i = join $ throwMergeError i <$> view _1 <*> view _2
-    runMergeCheckerT m v_x0 v_y0 ps =
-      flip runReaderT (v_x0, v_y0, ps, IntMap.empty) $
-      evalStateT m (IntSet.empty, HashMap.empty)
+    throwMergeError' i =
+      join $ throwMergeError i <$> lift (view _1) <*> lift (view _2)
+    runMergeCheckerT m =
+      runReaderT (evalStateT m (IntSet.empty, HashMap.empty)) IntMap.empty
 
 newtype IdT m a = IdT { runIdT :: m a }
 
@@ -584,7 +592,8 @@ runCheckerT m v_x v_y ps = runReaderT (runIdT m) (CheckerEnv v_x v_y ps)
 data MergedBinding =
   MergedBinding
   {-# UNPACK #-} !Int
-  {-# UNPACK #-} !Int deriving Generic
+  {-# UNPACK #-} !Int deriving (Eq, Generic)
+instance Hashable MergedBinding
 instance Tuple MergedBinding (Int, Int)
 
 type Permissions = IntMap Permission
